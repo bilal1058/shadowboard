@@ -25,9 +25,10 @@ class PolicyEvaluationResult:
         violated: bool,
         verdict: str,           # CONFIRMED | PASS | INCONCLUSIVE
         evidence_status: str,   # SUFFICIENT | INSUFFICIENT
-        confidence: float,
         evidence: Dict[str, Any],
         remediation: str,
+        evidence_strength: Optional[float] = None,
+        confidence: Optional[float] = None,
     ):
         self.rule_id = rule_id
         self.rule_name = rule_name
@@ -36,12 +37,17 @@ class PolicyEvaluationResult:
         self.violated = violated
         self.verdict = verdict
         self.evidence_status = evidence_status
-        self.confidence = confidence
+        self.evidence_strength = evidence_strength if evidence_strength is not None else (confidence or 0.0)
         self.evidence = evidence
         self.remediation = remediation
         self.evidence_hash = hashlib.sha256(
             json.dumps(evidence, sort_keys=True).encode("utf-8")
         ).hexdigest()
+
+    @property
+    def confidence(self) -> float:
+        """Compatibility accessor; evidence_strength is not calibrated probability."""
+        return self.evidence_strength
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -52,7 +58,8 @@ class PolicyEvaluationResult:
             "violated": self.violated,
             "verdict": self.verdict,
             "evidence_status": self.evidence_status,
-            "confidence": self.confidence,
+            "evidence_strength": self.evidence_strength,
+            "confidence": self.evidence_strength,
             "evidence": self.evidence,
             "evidence_hash": self.evidence_hash,
             "remediation": self.remediation,

@@ -35,7 +35,8 @@ async def list_all_findings(limit: int = 50, db: aiosqlite.Connection = Depends(
             "status": r[5],
             "attack_outcome": r[6],
             "evidence_status": r[7],
-            "confidence": r[8],
+            "evidence_strength": r[8],
+            "confidence": r[8],  # Deprecated compatibility alias.
             "severity": r[9],
             "evidence": ev,
             "evidence_hash": r[11],
@@ -66,7 +67,8 @@ async def list_scan_findings(scan_id: int, db: aiosqlite.Connection = Depends(ge
             "status": r[5],
             "attack_outcome": r[6],
             "evidence_status": r[7],
-            "confidence": r[8],
+            "evidence_strength": r[8],
+            "confidence": r[8],  # Deprecated compatibility alias.
             "severity": r[9],
             "evidence": json.loads(r[10]),
             "evidence_hash": r[11],

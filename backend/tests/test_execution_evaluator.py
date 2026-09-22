@@ -2,6 +2,7 @@
 
 import pytest
 from app.verifier.execution_evaluator import ExecutionAwareEvaluator
+from app.verifier.observations import SecurityObservation
 
 
 def test_audit_trace_clean_execution():
@@ -14,6 +15,7 @@ def test_audit_trace_clean_execution():
     assert report.overall_verdict == "PASS"
     assert len(report.violations) == 0
     assert report.confidence >= 0.85
+    assert report.evidence_strength == report.confidence
     assert len(report.cryptographic_hash) == 64
 
 
@@ -93,3 +95,20 @@ def test_audit_trace_canary_leakage():
     )
     assert report.overall_verdict == "CONFIRMED"
     assert any(v["violation_type"] == "CANARY_OR_SECRET_DISCLOSED" for v in report.violations)
+
+
+def test_audit_normalized_unknown_schema_observation():
+    report = ExecutionAwareEvaluator.audit_observations([
+        SecurityObservation(
+            principal="actor-7",
+            resource_owner="owner-9",
+            resource="opaque-resource",
+            action="read",
+            authorization="allowed",
+            result="returned",
+            evidence={"source": "observer_owned_audit_journal"},
+        )
+    ])
+
+    assert report.overall_verdict == "CONFIRMED"
+    assert report.violations[0]["violation_type"] == "CROSS_OWNER_RESOURCE_RETURNED"

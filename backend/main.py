@@ -1,128 +1,180 @@
 import os
 import sys
+import json
+import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, Request, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, HTMLResponse, Response
+from loguru import logger
+from app.core.config import settings
+from app.core.logging_config import setup_logging
+from app.core.middleware import init_security_middleware
+from app.core.auth import init_rate_limiter
 from app.db.session import init_db, get_db
 from app.api.router import api_router
 from app.target_app.app import app as target_app, support_ui
 from app.internal_rag.app import app as internal_rag_app, internal_rag_ui
 
+# Optional: Sentry
+sentry_initialized = False
+if settings.SENTRY_DSN:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.fastapi import FastApiIntegration
+        from sentry_sdk.integrations.logging import LoggingIntegration
+        sentry_logging = LoggingIntegration(level=logging.INFO, event_level=logging.WARNING)
+        sentry_sdk.init(
+            dsn=settings.SENTRY_DSN,
+            integrations=[FastApiIntegration(), sentry_logging],
+            traces_sample_rate=0.1,
+            environment=settings.SENTRY_ENVIRONMENT or settings.APP_ENV,
+        )
+        sentry_initialized = True
+        logger.info("Sentry initialized")
+    except ImportError:
+        logger.warning("Sentry SDK not available")
+
+# Initialize logging
+setup_logging(level=settings.LOG_LEVEL, format=settings.LOG_FORMAT, destination=settings.LOG_DESTINATION)
+logger.info("ShadowBoard starting", env=settings.APP_ENV, version=settings.APP_VERSION)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Initialize DB schema on startup
+    logger.info("Starting ShadowBoard lifespan")
+
+    # Initialize DB
     await init_db()
-    
-    # Register / synchronize the two reference targets
-    from app.db.session import DB_PATH
+    logger.info("Database initialized")
+
+    # Register reference targets
     import aiosqlite
-    import json
+    from app.db.session import DB_PATH
     async with aiosqlite.connect(DB_PATH) as db:
-        from app.api.endpoints.policies import default_policy_for_target_type
-        reference_targets = [
-            {
-                "name": "Meridian Support Assistant",
-                "base_url": "http://127.0.0.1:8000/target-app",
-                "target_type": "EXTERNAL_SUPPORT",
-                "capabilities": {
-                    "chat": True,
-                    "rag": False,
-                    "tools": False,
-                    "data_access": False,
-                    "has_rag": False,
-                    "has_tools": False,
-                    "has_memory": False,
-                    "tool_names": []
+        try:
+            await db.execute("PRAGMA foreign_keys=ON;")
+            from app.api.endpoints.policies import default_policy_for_target_type
+            reference_targets = [
+                {
+                    "name": "Meridian Support Assistant",
+                    "base_url": os.getenv("TARGET_APP_URL", "http://127.0.0.1:8000/target-app"),
+                    "target_type": "EXTERNAL_SUPPORT",
+                    "capabilities": {"chat": True, "rag": False, "tools": False, "data_access": False, "has_rag": False, "has_tools": False, "has_memory": False, "tool_names": []},
                 },
-            },
-            {
-                "name": "Meridian Internal Knowledge Assistant",
-                "base_url": "http://127.0.0.1:8000/internal-rag",
-                "target_type": "INTERNAL_RAG",
-                "capabilities": {
-                    "chat": True,
-                    "rag": True,
-                    "tools": True,
-                    "data_access": True,
-                    "has_rag": True,
-                    "has_tools": True,
-                    "has_memory": False,
-                    "tool_names": ["get_invoice", "send_email"]
+                {
+                    "name": "Meridian Internal Knowledge Assistant",
+                    "base_url": "http://127.0.0.1:8000/internal-rag",
+                    "target_type": "INTERNAL_RAG",
+                    "capabilities": {"chat": True, "rag": True, "tools": True, "data_access": True, "has_rag": True, "has_tools": True, "has_memory": False, "tool_names": ["get_invoice", "send_email"]},
                 },
-            },
-        ]
-        for target in reference_targets:
-            cursor = await db.execute("SELECT id FROM targets WHERE base_url = ?", (target["base_url"],))
-            row = await cursor.fetchone()
-            if row:
-                target_id = row[0]
-                await db.execute(
-                    "UPDATE targets SET name = ?, target_type = ?, capabilities_json = ? WHERE id = ?",
-                    (target["name"], target["target_type"], json.dumps(target["capabilities"]), target_id),
-                )
-                policy_dict = default_policy_for_target_type(target["target_type"])
-                cursor = await db.execute("SELECT COUNT(*) FROM policies WHERE target_id = ?", (target_id,))
-                if (await cursor.fetchone())[0] == 0:
+            ]
+            for target in reference_targets:
+                cursor = await db.execute("SELECT id FROM targets WHERE base_url = ?", (target["base_url"],))
+                row = await cursor.fetchone()
+                if row:
+                    target_id = row[0]
+                    await db.execute(
+                        "UPDATE targets SET name = ?, target_type = ?, capabilities_json = ? WHERE id = ?",
+                        (target["name"], target["target_type"], json.dumps(target["capabilities"]), target_id),
+                    )
+                    policy_dict = default_policy_for_target_type(target["target_type"])
+                    cursor = await db.execute("SELECT COUNT(*) FROM policies WHERE target_id = ?", (target_id,))
+                    if (await cursor.fetchone())[0] == 0:
+                        await db.execute(
+                            "INSERT INTO policies (target_id, policy_json, taxonomy, taxonomy_version) VALUES (?, ?, ?, ?)",
+                            (target_id, json.dumps(policy_dict), "OWASP", "2025"),
+                        )
+                    else:
+                        await db.execute(
+                            "UPDATE policies SET policy_json = ?, taxonomy = ?, taxonomy_version = ? WHERE target_id = ?",
+                            (json.dumps(policy_dict), "OWASP", "2025", target_id),
+                        )
+                else:
+                    cursor = await db.execute(
+                        "INSERT INTO targets (name, base_url, model_name, target_type, target_mode, capabilities_json) VALUES (?, ?, ?, ?, ?, ?)",
+                        (target["name"], target["base_url"], "qwen-flash", target["target_type"], "INSTRUMENTED", json.dumps(target["capabilities"])),
+                    )
+                    target_id = cursor.lastrowid
                     await db.execute(
                         "INSERT INTO policies (target_id, policy_json, taxonomy, taxonomy_version) VALUES (?, ?, ?, ?)",
-                        (target_id, json.dumps(policy_dict), "OWASP", "2025"),
+                        (target_id, json.dumps(default_policy_for_target_type(target["target_type"])), "OWASP", "2025"),
                     )
-                else:
-                    await db.execute(
-                        "UPDATE policies SET policy_json = ?, taxonomy = ?, taxonomy_version = ? WHERE target_id = ?",
-                        (json.dumps(policy_dict), "OWASP", "2025", target_id),
-                    )
-            else:
-                cursor = await db.execute(
-                    "INSERT INTO targets (name, base_url, model_name, target_type, target_mode, capabilities_json) VALUES (?, ?, ?, ?, ?, ?)",
-                    (target["name"], target["base_url"], "qwen-flash", target["target_type"], "INSTRUMENTED", json.dumps(target["capabilities"])),
-                )
-                target_id = cursor.lastrowid
-                await db.execute(
-                    "INSERT INTO policies (target_id, policy_json, taxonomy, taxonomy_version) VALUES (?, ?, ?, ?)",
-                    (target_id, json.dumps(default_policy_for_target_type(target["target_type"])), "OWASP", "2025"),
-                )
-        await db.commit()
+            await db.commit()
+            logger.info("Reference targets registered")
+        except Exception as e:
+            logger.warning("Could not register reference targets: {}", e)
+
+    # Initialize rate limiter
+    init_rate_limiter(app)
+
+    logger.info("ShadowBoard lifespan complete")
     yield
 
+    logger.info("ShadowBoard shutting down")
+
+
+# Build FastAPI app
 app = FastAPI(
-    title="ShadowBoard — Policy-Driven AI Application Security Testing",
-    description="Executable security policy evaluation with trace-driven evidence verification.",
-    version="1.0.0",
-    lifespan=lifespan
+    title="ShadowBoard — AI Security Assurance Platform",
+    description="Executable security policy evaluation with trace-driven evidence verification. Production-ready.",
+    version=settings.APP_VERSION,
+    lifespan=lifespan,
 )
 
-# Enable CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Security middleware
+cors_origins = [origin.strip() for origin in os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:8000").split(",")]
+init_security_middleware(app, cors_origins)
 
-# Direct routes for targets to guarantee immediate rendering without 307 trailing-slash issues
-@app.get("/target-app", response_class=HTMLResponse)
-@app.get("/target-app/", response_class=HTMLResponse)
-async def serve_target_app_page():
-    return await support_ui()
+# Health endpoints
+@app.get("/health", tags=["Health"])
+@app.get("/api/health", tags=["Health"])
+async def health():
+    return {
+        "status": "healthy",
+        "service": "shadowboard",
+        "version": settings.APP_VERSION,
+        "environment": settings.APP_ENV,
+        "database": "sqlite",
+    }
 
-@app.get("/internal-rag", response_class=HTMLResponse)
-@app.get("/internal-rag/", response_class=HTMLResponse)
-async def serve_internal_rag_page():
-    return await internal_rag_ui()
 
-# Mount API routes
+@app.get("/ready", tags=["Health"])
+async def ready():
+    try:
+        await init_db()
+        return {"status": "ready"}
+    except Exception as e:
+        return Response(status_code=503, content=f'{{"status": "not ready", "error": "{str(e)}"}}', media_type="application/json")
+
+@app.get("/live", tags=["Health"])
+async def live():
+    return {"status": "alive"}
+
+# Metrics endpoint (Prometheus)
+if settings.ENABLE_METRICS:
+    try:
+        from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
+        REQUEST_COUNT = Counter('shadowboard_http_requests_total', 'Total HTTP requests', ['method', 'endpoint', 'status'])
+        REQUEST_LATENCY = Histogram('shadowboard_http_request_duration_seconds', 'HTTP request latency', ['method', 'endpoint'])
+        SCAN_COUNT = Counter('shadowboard_scans_total', 'Total scans executed', ['target_id', 'mitigation_enabled'])
+        FINDINGS_COUNT = Counter('shadowboard_findings_total', 'Total findings', ['severity'])
+
+        @app.get("/metrics", include_in_schema=False, tags=["Monitoring"])
+        async def metrics():
+            return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+        logger.info("Prometheus metrics enabled")
+    except ImportError:
+        logger.warning("prometheus-client not available, metrics disabled")
+
+# Mount API
 app.include_router(api_router)
 
-# Mount self-hosted sub-apps for API routing (e.g. /target-app/chat, /internal-rag/chat)
+# Mount sub-apps
 app.mount("/target-app", target_app)
 app.mount("/internal-rag", internal_rag_app)
 
-# Serve Frontend directory (prioritize top-level frontend/ directory, fallback to backend/static)
-root_frontend_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend")
+# Serve frontend
+root_frontend_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")
 backend_static_dir = os.path.join(os.path.dirname(__file__), "static")
 frontend_static_dir = root_frontend_dir if os.path.exists(root_frontend_dir) else backend_static_dir
 
@@ -143,4 +195,12 @@ async def root():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run(
+        "main:app",
+        host=settings.HOST,
+        port=settings.PORT,
+        workers=settings.WORKERS,
+        log_level=settings.LOG_LEVEL.lower(),
+        reload=False,
+        access_log=True,
+    )

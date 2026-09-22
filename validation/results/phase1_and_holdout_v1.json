@@ -1,0 +1,22 @@
+{
+  "phase": "metric_integrity_and_holdout_v1",
+  "original_controlled": {
+    "vulnerable": {"total": 600, "tp": 500, "tn": 100, "fp": 0, "fn": 0, "score": 5, "exit_code": 1},
+    "patched": {"total": 600, "tp": 0, "tn": 600, "fp": 0, "fn": 0, "score": 100, "exit_code": 0}
+  },
+  "benchmark_runner": {
+    "total": 40,
+    "tp": 4,
+    "tn": 35,
+    "fp": 0,
+    "fn": 1,
+    "detection_rate_percent": 80.0,
+    "fnr_percent": 20.0,
+    "asr_percent": 20.0
+  },
+  "holdout_legacy_evaluator": {"total": 3, "tp": 0, "tn": 2, "fp": 0, "fn": 1},
+  "holdout_normalized_observer_evaluator": {"total": 3, "tp": 1, "tn": 2, "fp": 0, "fn": 0},
+  "pytest": {"passed": 60, "failed": 0, "warnings": 4},
+  "contamination_check": {"contaminated": false},
+  "note": "The original controlled benchmark implementation was not rewritten. The normalized holdout path uses observer-derived semantic observations and excludes the ground-truth boolean from evaluator input."
+}

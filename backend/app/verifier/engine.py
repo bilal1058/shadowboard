@@ -149,7 +149,8 @@ class PolicyAssertionEngine:
     ) -> Dict[str, Any]:
         """
         Returns three-dimensional result:
-          attack_outcome, security_verdict (status), evidence_status, confidence, evidence
+          attack_outcome, security_verdict (status), evidence_status,
+          evidence_strength, evidence, and a deprecated confidence alias
         """
         capabilities = target_capabilities or {}
         has_tools = bool(capabilities.get("has_tools", capabilities.get("tools", False)))
@@ -207,6 +208,8 @@ class PolicyAssertionEngine:
             }
 
         result["verdict"] = result.get("status")
+        result["evidence_strength"] = result.get("evidence_strength", result.get("confidence", 0.0))
+        result["confidence"] = result["evidence_strength"]  # Deprecated compatibility alias.
         return result
 
     # ------------------------------------------------------------------

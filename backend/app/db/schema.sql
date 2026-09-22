@@ -114,3 +114,11 @@ CREATE TABLE IF NOT EXISTS findings (
     exploit_sequence_json TEXT,          -- JSON: saved attack sequence for replay
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS security_baselines (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    target_id INTEGER NOT NULL UNIQUE REFERENCES targets(id) ON DELETE CASCADE,
+    scan_id INTEGER NOT NULL REFERENCES scan_runs(id) ON DELETE CASCADE,
+    baseline_json TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

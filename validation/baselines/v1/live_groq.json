@@ -1,0 +1,11 @@
+{
+  "command": "python -m pytest backend/tests/test_validation_v1.py::test_real_llm_tool_agent_groq -q -rs",
+  "exit_code": 0,
+  "tests_passed": 1,
+  "tests_skipped": 0,
+  "substrate": "REAL_LLM_INSTRUMENTED",
+  "model": "qwen/qwen3.8-27b",
+  "provider": "Groq",
+  "scope": "One vulnerable and one mitigated BOLA tool-calling turn against the in-memory invoice store.",
+  "captured_at_commit": "1caf2e8f4f23e68fbff5e127ef5bc4b9e380d87f"
+}

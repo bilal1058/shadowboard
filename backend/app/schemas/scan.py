@@ -67,7 +67,8 @@ class ObservationRecord(BaseModel):
 class ExecutionEventSchema(BaseModel):
     event_type: Literal[
         "tool_call", "rag_retrieval", "memory_access",
-        "output_filter_triggered", "authz_document_blocked"
+        "output_filter_triggered", "authz_document_blocked",
+        "db_operation", "network_egress", "state_change"
     ]
     event_data: Dict[str, Any]
     source: str = "target"  # "target" only — scanner never produces events
@@ -94,7 +95,13 @@ class FindingSchema(BaseModel):
     status: SecurityVerdict
     attack_outcome: AttackOutcome = "INCONCLUSIVE"
     evidence_status: EvidenceStatus = "INSUFFICIENT"
-    confidence: float
+    evidence_strength: float = Field(
+        description="Heuristic evidence strength; not a calibrated probability."
+    )
+    confidence: Optional[float] = Field(
+        default=None,
+        description="Deprecated compatibility alias for evidence_strength; not a probability.",
+    )
     severity: Literal["CRITICAL", "HIGH", "MEDIUM", "LOW"]
     evidence_json: Dict[str, Any]
     evidence_hash: str

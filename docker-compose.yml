@@ -1,22 +1,21 @@
 version: '3.8'
 
 services:
-  shadowboard-gateway:
+  shadowboard:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: shadowboard-platform
+    container_name: shadowboard-dev
     ports:
       - "8000:8000"
     environment:
       - PORT=8000
       - HOST=0.0.0.0
       - PYTHONUNBUFFERED=1
-    volumes:
-      - ./backend/shadowboard.db:/app/backend/shadowboard.db
+      - APP_ENV=development
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/targets"]
+      test: ["CMD", "python", "-c", "import urllib.request; r=urllib.request.urlopen('http://localhost:8000/api/health'); exit(0 if r.status == 200 else 1)"]
       interval: 10s
       timeout: 5s
       retries: 3

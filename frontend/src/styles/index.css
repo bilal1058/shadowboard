@@ -1,0 +1,44 @@
+/*
+ * Base styles for ShadowBoard frontend
+ */
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    background-color: #070709;
+    color: #f1f5f9;
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+    overflow-x: hidden;
+  }
+
+  ::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #070709;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #261e23;
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #3d2b33;
+  }
+}
+
+@layer components {
+  .glow-brand {
+    box-shadow: 0 0 24px rgba(225, 29, 72, 0.25);
+  }
+  .glow-danger {
+    box-shadow: 0 0 24px rgba(225, 29, 72, 0.35);
+  }
+  .glow-success {
+    box-shadow: 0 0 24px rgba(16, 185, 129, 0.25);
+  }
+}

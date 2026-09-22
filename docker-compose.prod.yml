@@ -1,0 +1,26 @@
+version: "3.8"
+
+services:
+  shadowboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    container_name: shadowboard-backend
+    environment:
+      - APP_ENV=production
+      - HOST=0.0.0.0
+      - PORT=8000
+      - SHADOWBOARD_ADMIN_KEY=${SHADOWBOARD_ADMIN_KEY:-}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://127.0.0.1:8000}
+      - LOG_LEVEL=warning
+      - LOG_FORMAT=json
+      - SCAN_TIMEOUT_SECONDS=300
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; r=urllib.request.urlopen('http://localhost:8000/api/health'); exit(0 if r.status == 200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped

@@ -1,38 +1,76 @@
-name: ShadowBoard AI Assurance CI/CD Gate
+name: ShadowBoard AI Assurance CI/CD Pipeline
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main, develop]
   pull_request:
-    branches: [ main ]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: 'External target URL to scan'
+        required: false
+        default: ''
+
+env:
+  PYTHON_VERSION: '3.11'
+  NODE_VERSION: '20'
 
 jobs:
-  ai-security-assurance:
-    name: Autonomous AI Agent Security Assessment
+  security-assurance:
+    name: Autonomous AI Agent Security Assessment & Hygiene
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Set up Python
+      - name: Set up Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: frontend/package.json
+
+      - name: Frontend Build & Typecheck
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+
+      - name: Verify Backend Static is Clean Build Output
+        run: |
+          test -f backend/static/index.html
+          echo "Frontend built successfully into backend/static"
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
 
-      - name: Install Dependencies
+      - name: Clean Install Backend Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r backend/requirements.txt
 
+      - name: Run Pytest Suite
+        run: |
+          pytest backend/tests/ -v --tb=short
+        env:
+          APP_ENV: test
+
       - name: Run ShadowBoard Security Gate
         run: |
-          python backend/shadowboard_cli.py \
+          cd backend
+          python shadowboard_cli.py \
             --target-id 2 \
             --ci \
             --max-critical 0 \
             --min-score 75 \
+            --probes-per-class 100 \
             --sarif-out shadowboard-results.sarif \
             --junit-out junit-report.xml
 
@@ -40,5 +78,10 @@ jobs:
         if: always()
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: shadowboard-results.sarif
+          sarif_file: backend/shadowboard-results.sarif
           category: shadowboard-ai-assurance
+          fail_on_error: false
+
+      - name: Build Docker Image & Verify Healthcheck
+        run: |
+          docker build -f Dockerfile.prod -t shadowboard:ci-test .

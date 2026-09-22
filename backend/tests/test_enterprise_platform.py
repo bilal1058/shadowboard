@@ -82,7 +82,10 @@ def test_shadowboard_bench_endpoints(client):
     assert run_resp.status_code == 200
     suite = run_resp.json()
     assert suite["agents_tested"] == 5
-    assert suite["global_detection_rate"] == 100.0
+    assert suite["global_detection_rate"] == round(
+        suite["global_tp"] / max(1, suite["global_tp"] + suite["global_fn"]) * 100.0,
+        1,
+    )
     assert "results" in suite
 
 

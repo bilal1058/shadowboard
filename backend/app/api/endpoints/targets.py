@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
 import json
 import aiosqlite
-import httpx
+from typing import Optional
 from pydantic import BaseModel, HttpUrl
 from app.db.session import get_db
 from app.schemas.target import TargetContract, TargetResponse
+from app.core.ssrf import validate_target_url, safe_http_get_json, SSRFValidationError
 
 router = APIRouter(prefix="/targets", tags=["Targets"])
 
@@ -25,40 +26,43 @@ DEFAULT_TARGET = {
 
 class ConnectionCheckRequest(BaseModel):
     base_url: str
+    allow_local: bool = False
 
 @router.post("/test-connection")
 async def test_connection(request: ConnectionCheckRequest):
-    """Validate a target by reading its real health and contract endpoints."""
-    base_url = request.base_url.rstrip("/")
+    """Validate a target by reading its real health and contract endpoints with SSRF protections."""
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            health = await client.get(f"{base_url}/health")
-            contract = await client.get(f"{base_url}/contract")
-    except httpx.HTTPError as exc:
-        raise HTTPException(status_code=503, detail=f"Connection failed: {exc}") from exc
+        validated_base = validate_target_url(request.base_url, allow_local=request.allow_local)
+    except SSRFValidationError as exc:
+        raise HTTPException(status_code=400, detail=f"SSRF validation blocked target URL: {exc}")
 
-    if health.status_code != 200 or contract.status_code != 200:
-        raise HTTPException(
-            status_code=422,
-            detail={"message": "Target did not expose a valid health/contract interface.", "health_status": health.status_code, "contract_status": contract.status_code},
-        )
     try:
-        return {"connected": True, "health": health.json(), "contract": contract.json()}
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail="Target returned a non-JSON health or contract response.") from exc
+        health_data = await safe_http_get_json(f"{validated_base}/health", allow_local=request.allow_local)
+        contract_data = await safe_http_get_json(f"{validated_base}/contract", allow_local=request.allow_local)
+    except SSRFValidationError as exc:
+        raise HTTPException(status_code=422, detail=f"Target connection or validation failed: {exc}")
+
+    return {"connected": True, "health": health_data, "contract": contract_data}
 
 @router.post("", response_model=TargetResponse)
 async def create_target(target: TargetContract, db: aiosqlite.Connection = Depends(get_db)):
+    # Local reference targets built into ShadowBoard are allowed loopback
+    is_local_ref = "127.0.0.1:8000" in target.base_url or "localhost:8000" in target.base_url
+    try:
+        validated_base = validate_target_url(target.base_url, allow_local=is_local_ref)
+    except SSRFValidationError as exc:
+        raise HTTPException(status_code=400, detail=f"SSRF validation blocked target URL: {exc}")
+
     cursor = await db.execute(
         "INSERT INTO targets (name, base_url, model_name, target_type, target_mode, capabilities_json) VALUES (?, ?, ?, ?, ?, ?)",
-        (target.name, target.base_url, target.model_name, target.target_type, target.target_mode, json.dumps(target.capabilities.model_dump()))
+        (target.name, validated_base, target.model_name, target.target_type, target.target_mode, json.dumps(target.capabilities.model_dump()))
     )
     await db.commit()
     target_id = cursor.lastrowid
     return TargetResponse(
         id=target_id,
         name=target.name,
-        base_url=target.base_url,
+        base_url=validated_base,
         model_name=target.model_name,
         target_type=target.target_type,
         target_mode=target.target_mode,

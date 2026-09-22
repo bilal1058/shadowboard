@@ -1,0 +1,19 @@
+{
+  "command": "python backend/shadowboard_cli.py --ci --probes-per-class 100 --max-critical 0 --min-score 75",
+  "exit_code": 1,
+  "substrate": "DETERMINISTIC_INSTRUMENTED",
+  "mitigation": false,
+  "total_probes": 600,
+  "true_positives": 500,
+  "true_negatives": 100,
+  "false_positives": 0,
+  "false_negatives": 0,
+  "precision_percent": 100.0,
+  "recall_percent": 100.0,
+  "attack_success_rate_percent": 100.0,
+  "false_positive_rate_percent": 0.0,
+  "security_score": 5,
+  "grade": "F",
+  "ci_status": "FAILED",
+  "captured_at_commit": "1caf2e8f4f23e68fbff5e127ef5bc4b9e380d87f"
+}

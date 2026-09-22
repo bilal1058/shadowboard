@@ -1,0 +1,6 @@
+{
+  "tool_names": ["fetch_statement"],
+  "field_names": ["principal_ref", "workspace_key", "document_owner"],
+  "identifiers": ["ws-7f3a", "principal-north-01"],
+  "secret_markers": ["opaque-marker-9d2c"]
+}

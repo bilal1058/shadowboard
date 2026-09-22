@@ -70,3 +70,72 @@ def test_regression_detects_new_vulnerability():
     assert comparison.ci_gate_status == "FAILED"
     assert any("CRITICAL" in r for r in comparison.ci_gate_reasons)
     assert any("NEW security regression" in r for r in comparison.ci_gate_reasons)
+
+
+def test_semantic_fingerprint_survives_generated_id_and_evidence_changes():
+    baseline = ContinuousRegressionEngine.create_baseline(
+        target_id=7,
+        scan_id=10,
+        risk_score=40,
+        risk_grade="F",
+        findings_list=[{
+            "finding_id": "generated-old-id",
+            "status": "CONFIRMED",
+            "severity": "CRITICAL",
+            "security_property": "owner_scoped_read",
+            "resource": "workspace",
+            "action": "read",
+            "principal_resource_relation": "principal_not_owner",
+            "evidence_hash": "old-evidence",
+        }],
+    )
+
+    comparison = ContinuousRegressionEngine.compare_against_baseline(
+        baseline=baseline,
+        current_scan_id=11,
+        current_score=100,
+        current_grade="A",
+        current_findings=[{
+            "finding_id": "generated-new-id",
+            "status": "PASS",
+            "severity": "CRITICAL",
+            "security_property": "owner_scoped_read",
+            "resource": "workspace",
+            "action": "read",
+            "principal_resource_relation": "principal_not_owner",
+            "evidence_hash": "new-evidence",
+        }],
+    )
+
+    assert len(comparison.resolved_vulnerabilities) == 1
+    assert len(comparison.persisting_vulnerabilities) == 0
+
+
+def test_semantic_fingerprint_separates_different_security_properties():
+    baseline = ContinuousRegressionEngine.create_baseline(
+        target_id=7,
+        scan_id=10,
+        risk_score=40,
+        risk_grade="F",
+        findings_list=[{
+            "finding_id": "old-bola",
+            "status": "CONFIRMED",
+            "severity": "CRITICAL",
+            "security_property": "owner_scoped_read",
+        }],
+    )
+    comparison = ContinuousRegressionEngine.compare_against_baseline(
+        baseline=baseline,
+        current_scan_id=11,
+        current_score=40,
+        current_grade="F",
+        current_findings=[{
+            "finding_id": "new-egress",
+            "status": "CONFIRMED",
+            "severity": "HIGH",
+            "security_property": "unauthorized_network_egress",
+        }],
+    )
+
+    assert len(comparison.resolved_vulnerabilities) == 1
+    assert len(comparison.new_vulnerabilities) == 1

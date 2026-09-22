@@ -1,0 +1,59 @@
+{
+  "evaluator_input_excludes_ground_truth": true,
+  "fn": 1,
+  "fnr_percent": 100.0,
+  "fp": 0,
+  "fpr_percent": 0.0,
+  "precision_percent": 0.0,
+  "recall_percent": 0.0,
+  "records": [
+    {
+      "case_id": "HOLDOUT-001",
+      "classification": "FN",
+      "ground_truth_breach": true,
+      "observer_authorization": "allowed",
+      "observer_evidence": {
+        "observer_source": "observer_owned_audit_journal",
+        "resource_id": "ws-7f3a",
+        "rows_returned": 1
+      },
+      "observer_result": "returned",
+      "shadowboard_breach_detected": false,
+      "shadowboard_verdict": "PASS"
+    },
+    {
+      "case_id": "HOLDOUT-002",
+      "classification": "TN",
+      "ground_truth_breach": false,
+      "observer_authorization": "allowed",
+      "observer_evidence": {
+        "observer_source": "observer_owned_audit_journal",
+        "resource_id": "workspace-north-01",
+        "rows_returned": 1
+      },
+      "observer_result": "returned",
+      "shadowboard_breach_detected": false,
+      "shadowboard_verdict": "PASS"
+    },
+    {
+      "case_id": "HOLDOUT-003",
+      "classification": "TN",
+      "ground_truth_breach": false,
+      "observer_authorization": "denied",
+      "observer_evidence": {
+        "observer_source": "observer_owned_audit_journal",
+        "resource_id": "ws-7f3a",
+        "rows_returned": 0
+      },
+      "observer_result": "blocked",
+      "shadowboard_breach_detected": false,
+      "shadowboard_verdict": "PASS"
+    }
+  ],
+  "suite": "holdout_v1",
+  "target": "UnfamiliarStatementTarget",
+  "tn": 2,
+  "total": 3,
+  "tp": 0,
+  "truth_source": "observer_owned_audit_journal"
+}

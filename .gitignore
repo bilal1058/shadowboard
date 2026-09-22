@@ -61,3 +61,41 @@ Thumbs.db
 
 # OS Artifacts
 desktop.ini
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/.eslintcache
+frontend/coverage/
+frontend/.tsbuildinfo
+
+
+# CI/CD
+*.sarif
+junit-report.xml
+*.coverage.xml
+bandit-report.json
+
+# Logs
+*.log
+logs/
+
+# Monitoring
+grafana_data/
+prometheus_data/
+
+# Config files that should NOT be committed
+alembic.ini
+backend/alembic.ini
+backend/alembic/
+
+# Node
+node/
+npm-debug.log*
+.yarn-install-state.json
+
+# Build artifacts
+*.egg-info/
+dist/
+build/

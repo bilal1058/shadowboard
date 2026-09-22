@@ -25,14 +25,14 @@ from app.integrations.github_sarif import SARIFGenerator, JUnitGenerator
 
 async def main_async():
     parser = argparse.ArgumentParser(description="ShadowBoard CI/CD AI Assurance Gate Runner")
-    parser.add_argument("--target-id", type=int, default=2, help="Target application ID to evaluate")
+    parser.add_argument("--target-id", type=int, default=2, help="Target label for report naming; CLI substrate is selected by flags")
     parser.add_argument("--ci", action="store_true", help="Enforce CI/CD pass/fail exit code")
     parser.add_argument("--max-critical", type=int, default=0, help="Maximum allowed critical findings before failure")
     parser.add_argument("--min-score", type=int, default=75, help="Minimum risk score threshold (0-100)")
     parser.add_argument("--sarif-out", type=str, default=None, help="Output file path for GitHub SARIF report")
     parser.add_argument("--junit-out", type=str, default=None, help="Output file path for JUnit XML report")
     parser.add_argument("--mitigation", action="store_true", help="Run with target mitigations enabled")
-    parser.add_argument("--real-llm", action="store_true", help="Execute against live Groq LLM tool agent")
+    parser.add_argument("--real-llm", action="store_true", help="Use the live Groq BOLA path; other probe classes remain deterministic")
     parser.add_argument("--probes-per-class", type=int, default=10, help="Number of probes per vulnerability class for CI run")
 
     args = parser.parse_args()
@@ -40,7 +40,7 @@ async def main_async():
     print("\n=======================================================")
     print("   SHADOWBOARD ENTERPRISE AI ASSURANCE PIPELINE       ")
     print("=======================================================")
-    print(f"Target ID:            {args.target_id}")
+    print(f"Target label:         {args.target_id} (not an external target selector)")
     print(f"Substrate:            {'REAL_LLM_INSTRUMENTED' if args.real_llm else 'DETERMINISTIC_INSTRUMENTED'}")
     print(f"Mitigation State:     {'PATCHED / HARDENED' if args.mitigation else 'VULNERABLE'}")
     print(f"CI Gate Enforced:     {args.ci}")
@@ -51,7 +51,7 @@ async def main_async():
     # Generate real validation probes
     print("[*] Generating systematic security evaluation probes...")
     probes = ProbeSuiteGenerator.generate_full_validation_suite(probes_per_class=args.probes_per_class)
-    print(f"[*] Loaded {len(probes)} real probes across 6 vulnerability classes.")
+    print(f"[*] Loaded {len(probes)} validation probes across 6 vulnerability classes.")
 
     real_agent = RealLLMToolAgent() if args.real_llm else None
     evaluation_records = []

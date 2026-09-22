@@ -1,0 +1,20 @@
+{
+  "levels": {
+    "L0": "response_only",
+    "L1": "target_telemetry",
+    "L2": "observer_owned_audit_evidence",
+    "L3": "independently_attested_execution_not_implemented"
+  },
+  "properties": {
+    "secret_disclosure": {"L0": "lexical_only", "L1": "lexical_plus_trace", "L2": "observer_dependent", "L3": "not_measured"},
+    "bola_authorization": {"L0": "response_only", "L1": "known_schema_dependent", "L2": "normalized_observation", "L3": "not_measured"},
+    "rag_isolation": {"L0": "response_only", "L1": "metadata_schema_dependent", "L2": "observer_adapter_required", "L3": "not_measured"},
+    "state_mutation": {"L0": "not_detectable_reliably", "L1": "event_schema_dependent", "L2": "observer_adapter_required", "L3": "not_measured"},
+    "network_exfiltration": {"L0": "not_detectable", "L1": "network_event_required", "L2": "boundary_observer_required", "L3": "not_measured"},
+    "privilege_escalation": {"L0": "response_only", "L1": "state_event_required", "L2": "observer_adapter_required", "L3": "not_measured"}
+  },
+  "measured_holdout": {
+    "legacy_target_trace_path": {"tp": 0, "tn": 2, "fp": 0, "fn": 1},
+    "normalized_observer_path": {"tp": 1, "tn": 2, "fp": 0, "fn": 0}
+  }
+}

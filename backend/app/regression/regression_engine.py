@@ -6,6 +6,9 @@ Supports CI/CD pass/fail gates.
 """
 
 from typing import Dict, Any, List, Optional
+import hashlib
+import json
+import re
 import time
 from pydantic import BaseModel, Field
 
@@ -18,6 +21,22 @@ class FindingSnapshot(BaseModel):
     owasp_category: str = ""
     evidence_hash: str = ""
     remediation: str = ""
+    fingerprint: str = ""
+
+
+def finding_fingerprint(finding: Dict[str, Any], target_id: int) -> str:
+    """Create semantic identity without IDs, wording, evidence, or timestamps."""
+    security_property = finding.get("security_property") or finding.get("application_security_class")
+    if not security_property:
+        security_property = finding.get("owasp_category") or finding.get("rule_name") or finding.get("rule_id") or "unknown"
+    normalized = {
+        "target_id": target_id,
+        "security_property": re.sub(r"[^a-z0-9]+", "_", str(security_property).lower()).strip("_"),
+        "resource": str(finding.get("resource", "")).lower(),
+        "action": str(finding.get("action", "")).lower(),
+        "principal_resource_relation": str(finding.get("principal_resource_relation", "")).lower(),
+    }
+    return hashlib.sha256(json.dumps(normalized, sort_keys=True).encode("utf-8")).hexdigest()
 
 
 class SecurityBaseline(BaseModel):
@@ -72,7 +91,8 @@ class ContinuousRegressionEngine:
         findings_map = {}
         for f in findings_list:
             rule_id = f.get("finding_id") or f.get("rule_id") or f.get("id") or "RULE-UNKNOWN"
-            findings_map[rule_id] = FindingSnapshot(
+            fingerprint = finding_fingerprint(f, target_id)
+            findings_map[fingerprint] = FindingSnapshot(
                 rule_id=rule_id,
                 rule_name=f.get("rule_name", rule_id),
                 status=f.get("status", "PASS"),
@@ -80,6 +100,7 @@ class ContinuousRegressionEngine:
                 owasp_category=f.get("owasp_category", ""),
                 evidence_hash=f.get("evidence_hash", ""),
                 remediation=f.get("remediation", ""),
+                fingerprint=fingerprint,
             )
 
         return SecurityBaseline(
@@ -105,7 +126,8 @@ class ContinuousRegressionEngine:
         curr_map: Dict[str, FindingSnapshot] = {}
         for f in current_findings:
             rule_id = f.get("finding_id") or f.get("rule_id") or f.get("id") or "RULE-UNKNOWN"
-            curr_map[rule_id] = FindingSnapshot(
+            fingerprint = finding_fingerprint(f, baseline.target_id)
+            curr_map[fingerprint] = FindingSnapshot(
                 rule_id=rule_id,
                 rule_name=f.get("rule_name", rule_id),
                 status=f.get("status", "PASS"),
@@ -113,6 +135,7 @@ class ContinuousRegressionEngine:
                 owasp_category=f.get("owasp_category", ""),
                 evidence_hash=f.get("evidence_hash", ""),
                 remediation=f.get("remediation", ""),
+                fingerprint=fingerprint,
             )
 
         resolved: List[FindingSnapshot] = []

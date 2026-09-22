@@ -16,7 +16,12 @@ from app.api.endpoints.policies import DEFAULT_POLICY
 
 router = APIRouter(prefix="/scans", tags=["Scans"])
 
-# Global event queues for SSE streaming per scan_id
+# Concurrency control: max 3 concurrent scans
+MAX_CONCURRENT_SCANS = 3
+active_scans_lock = asyncio.Lock()
+active_scans: set[int] = set()
+
+# Bounded event queues for SSE streaming per scan_id (max 100 queued events per subscriber)
 sse_queues: Dict[int, List[asyncio.Queue]] = {}
 
 
@@ -27,8 +32,28 @@ async def broadcast_sse_event(scan_id: int, event_type: str, data: Dict[str, Any
         "data": data
     }
     if scan_id in sse_queues:
-        for q in sse_queues[scan_id]:
-            await q.put(event_payload)
+        for q in list(sse_queues[scan_id]):
+            try:
+                if q.full():
+                    try:
+                        q.get_nowait()
+                    except asyncio.QueueEmpty:
+                        pass
+                q.put_nowait(event_payload)
+            except Exception:
+                pass
+
+
+async def cleanup_sse_scan(scan_id: int, delay_seconds: float = 1.0):
+    """Wait briefly for subscribers to receive terminal events, then purge scan queues."""
+    await asyncio.sleep(delay_seconds)
+    queues = sse_queues.pop(scan_id, None)
+    if queues:
+        for q in queues:
+            try:
+                q.put_nowait({"type": "scan_closed", "scan_id": scan_id, "data": {}})
+            except Exception:
+                pass
 
 
 def policy_family(rule: PolicyRule) -> str:
@@ -325,7 +350,7 @@ async def run_scan_task(scan_id: int, target_id: int, scan_mode: str, mitigation
                             verdict,
                             res.get("attack_outcome", "INCONCLUSIVE"),
                             res.get("evidence_status", "INSUFFICIENT"),
-                            res["confidence"],
+                            res.get("evidence_strength", res["confidence"]),
                             res["severity"],
                             json.dumps(res["evidence"]),
                             res["evidence_hash"],
@@ -341,7 +366,8 @@ async def run_scan_task(scan_id: int, target_id: int, scan_mode: str, mitigation
                     "attack_outcome": res.get("attack_outcome", "INCONCLUSIVE"),
                     "evidence_status": res.get("evidence_status", "INSUFFICIENT"),
                     "severity": res["severity"],
-                    "confidence": res["confidence"],
+                    "evidence_strength": res.get("evidence_strength", res["confidence"]),
+                    "confidence": res["confidence"],  # Deprecated compatibility alias.
                     "evidence_hash": res.get("evidence_hash", ""),
                 })
 
@@ -395,6 +421,10 @@ async def run_scan_task(scan_id: int, target_id: int, scan_mode: str, mitigation
             )
             await db.commit()
         await broadcast_sse_event(scan_id, "error", {"error": str(err)})
+    finally:
+        async with active_scans_lock:
+            active_scans.discard(scan_id)
+        asyncio.create_task(cleanup_sse_scan(scan_id))
 
 
 @router.post("", response_model=Dict[str, Any])
@@ -403,13 +433,22 @@ async def trigger_scan(
     background_tasks: BackgroundTasks,
     db: aiosqlite.Connection = Depends(get_db),
 ):
-    cursor = await db.execute(
-        "INSERT INTO scan_runs (target_id, scan_mode, mitigation_enabled, status) VALUES (?, ?, ?, ?)",
-        (req.target_id, req.scan_mode, req.mitigation_enabled, "QUEUED"),
-    )
-    await db.commit()
-    scan_id = cursor.lastrowid
-    sse_queues[scan_id] = []
+    async with active_scans_lock:
+        if len(active_scans) >= MAX_CONCURRENT_SCANS:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Concurrent scan limit reached ({MAX_CONCURRENT_SCANS}). 4th scan rejected.",
+                headers={"Retry-After": "5"},
+            )
+
+        cursor = await db.execute(
+            "INSERT INTO scan_runs (target_id, scan_mode, mitigation_enabled, status) VALUES (?, ?, ?, ?)",
+            (req.target_id, req.scan_mode, req.mitigation_enabled, "QUEUED"),
+        )
+        await db.commit()
+        scan_id = cursor.lastrowid
+        active_scans.add(scan_id)
+        sse_queues[scan_id] = []
 
     background_tasks.add_task(
         run_scan_task,
@@ -518,7 +557,8 @@ async def get_target_comparison(target_id: int, db: aiosqlite.Connection = Depen
                 {
                     "finding_id": f[0], "owasp_category": f[1], "status": f[2],
                     "severity": f[3], "remediation": f[4],
-                    "attack_outcome": f[5], "evidence_status": f[6], "confidence": f[7],
+                    "attack_outcome": f[5], "evidence_status": f[6],
+                    "evidence_strength": f[7], "confidence": f[7],
                 }
                 for f in f_rows1
             ],
@@ -560,7 +600,8 @@ async def get_target_comparison(target_id: int, db: aiosqlite.Connection = Depen
                 {
                     "finding_id": f[0], "owasp_category": f[1], "status": f[2],
                     "severity": f[3], "remediation": f[4],
-                    "attack_outcome": f[5], "evidence_status": f[6], "confidence": f[7],
+                    "attack_outcome": f[5], "evidence_status": f[6],
+                    "evidence_strength": f[7], "confidence": f[7],
                 }
                 for f in f_rows2
             ],
@@ -686,8 +727,20 @@ async def get_scan_details(scan_id: int, db: aiosqlite.Connection = Depends(get_
 
 
 @router.get("/{scan_id}/stream")
-async def stream_scan_events(scan_id: int):
-    queue = asyncio.Queue()
+async def stream_scan_events(scan_id: int, db: aiosqlite.Connection = Depends(get_db)):
+    cursor = await db.execute("SELECT status FROM scan_runs WHERE id = ?", (scan_id,))
+    row = await cursor.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Scan not found")
+
+    current_status = row[0]
+    if current_status in ("COMPLETED", "FAILED"):
+        async def completed_generator():
+            terminal_type = "scan_complete" if current_status == "COMPLETED" else "error"
+            yield f"data: {json.dumps({'type': terminal_type, 'scan_id': scan_id, 'data': {'status': current_status}})}\n\n"
+        return StreamingResponse(completed_generator(), media_type="text/event-stream")
+
+    queue: asyncio.Queue = asyncio.Queue(maxsize=100)
     if scan_id not in sse_queues:
         sse_queues[scan_id] = []
     sse_queues[scan_id].append(queue)
@@ -695,9 +748,14 @@ async def stream_scan_events(scan_id: int):
     async def event_generator():
         try:
             while True:
-                payload = await queue.get()
+                try:
+                    payload = await asyncio.wait_for(queue.get(), timeout=15.0)
+                except asyncio.TimeoutError:
+                    yield ": ping\n\n"
+                    continue
+
                 yield f"data: {json.dumps(payload)}\n\n"
-                if payload["type"] in ("scan_complete", "error"):
+                if payload.get("type") in ("scan_complete", "error", "scan_closed"):
                     break
         except asyncio.CancelledError:
             pass
@@ -706,6 +764,7 @@ async def stream_scan_events(scan_id: int):
                 sse_queues[scan_id].remove(queue)
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
 
 
 @router.get("/{scan_id}/export/pdf")
@@ -831,7 +890,7 @@ async def execute_sandbox_probe(request: SandboxProbeRequest, db: aiosqlite.Conn
     evaluator = FSMStanceClassifier()
     eval_res = await evaluator.evaluate_stance(request.prompt, response_text, events)
     stance = eval_res.stance if isinstance(eval_res.stance, str) else str(eval_res.stance)
-    confidence = eval_res.confidence
+    evidence_strength = eval_res.confidence
 
     # Detect breach conditions
     has_canary = any(c in response_text for c in ["CANARY", "INTERNAL_DOC_7C15", "CONFIDENTIAL_COMP_VAULT", "whsec_", "ESCROW-TITAN"])
@@ -852,7 +911,8 @@ async def execute_sandbox_probe(request: SandboxProbeRequest, db: aiosqlite.Conn
         "response_text": response_text,
         "stance": stance,
         "verdict": verdict,
-        "confidence": confidence,
+        "evidence_strength": evidence_strength,
+        "confidence": evidence_strength,  # Deprecated compatibility alias.
         "events": events,
         "mitigation_enabled": request.mitigation_enabled,
         "latency_ms": latency_ms

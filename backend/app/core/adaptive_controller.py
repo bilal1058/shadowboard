@@ -80,7 +80,7 @@ class AdaptiveScanController:
         
         Returns the three-dimensional result:
           status (security_verdict), attack_outcome, evidence_status,
-          confidence, evidence, evidence_hash, remediation, attempts
+          evidence_strength, evidence, evidence_hash, remediation, attempts
         """
         engine = self.engines.get(family)
         if not engine:
@@ -101,7 +101,8 @@ class AdaptiveScanController:
             "attack_outcome": "INCONCLUSIVE",
             "evidence_status": "INSUFFICIENT",
             "severity": "LOW",
-            "confidence": 0.0,
+            "evidence_strength": 0.0,
+            "confidence": 0.0,  # Deprecated compatibility alias.
             "evidence": {},
             "evidence_hash": "",
             "remediation": "No policy violation detected.",
@@ -190,7 +191,8 @@ class AdaptiveScanController:
                     "attack_outcome": verification.get("attack_outcome", "COMPLIED"),
                     "evidence_status": verification.get("evidence_status", "SUFFICIENT"),
                     "severity": verification["severity"],
-                    "confidence": verification["confidence"],
+                    "evidence_strength": verification.get("evidence_strength", verification["confidence"]),
+                    "confidence": verification["confidence"],  # Deprecated compatibility alias.
                     "evidence": verification["evidence"],
                     "evidence_hash": verification["evidence_hash"],
                     "remediation": verification["remediation"],
@@ -288,7 +290,8 @@ class AdaptiveScanController:
             "attack_outcome": "ERROR",
             "evidence_status": "NOT_AVAILABLE",
             "severity": "LOW",
-            "confidence": 0.0,
+            "evidence_strength": 0.0,
+            "confidence": 0.0,  # Deprecated compatibility alias.
             "evidence": {"error": message},
             "evidence_hash": "",
             "remediation": "",

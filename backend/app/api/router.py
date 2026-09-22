@@ -14,6 +14,11 @@ from app.api.endpoints import (
 
 api_router = APIRouter(prefix="/api")
 
+@api_router.get("/health", tags=["Health"])
+async def api_health():
+    return {"status": "ok", "service": "shadowboard"}
+
+
 # Core endpoints
 api_router.include_router(targets.router)
 api_router.include_router(policies.router)
