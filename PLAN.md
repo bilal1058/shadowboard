@@ -63,7 +63,7 @@
 | Phase | Description | Status | Test Command | Result | Commit SHA |
 | :---: | :--- | :---: | :--- | :--- | :--- |
 | **0** | Security Emergency & Reproducibility Hygiene | **GREEN / COMPLETED** | `pytest backend/tests -v` & `npm run build` | 89 passed, 1 skipped, 0 failed; Vite build clean in 1.75s | `3f8daac` |
-| **1** | Break Circular Ground Truth & Independent Oracle | Pending | TBD | TBD | Pending |
+| **1** | Break Circular Ground Truth & Independent Oracle | **GREEN / COMPLETED** | `pytest backend/tests -v` | 96 passed, 1 skipped, 0 failed in 6.50s (7/7 Phase 1 tests passed) | `27915b2` |
 | **2** | Remove Hardcoded Demo Values from Paths | Pending | TBD | TBD | Pending |
 | **3** | Detection Quality & Refusal / Stance Boundaries | Pending | TBD | TBD | Pending |
 | **4** | Real Evidence Cryptography & Key Registry | Pending | TBD | TBD | Pending |
@@ -88,4 +88,29 @@
 - [x] **0.8 SSE Lifecycle**: Enforced bounded subscriber queues (size 100), graceful `cleanup_sse_scan` purging `sse_queues` scan entries, and terminal event broadcasting.
 - [x] **0.9 Concurrency**: Enforced max 3 concurrent scans via `active_scans` set and lock; 4th scan rejected with HTTP 429 Too Many Requests (`Retry-After: 5`). Scans execute with isolated state.
 - [x] **Phase 0 Tests**: Created `backend/tests/test_phase0_hygiene.py` covering auth, fail-closed mode, CORS wildcard ban, SSRF schemes/IPs, SSRF API endpoints, SSE lifecycle, and concurrency cap. Total test suite: 89 passed, 1 skipped, 0 failed.
+
+---
+
+## 5. Phase 1 Detailed Execution Log
+
+- [x] **1.1 Real Database Substrate**: Created `backend/app/bench/invoice_db.py` with Postgres-compatible DDL (`customers`, `invoices`, `enforcement_log`). Deterministically seeds customer 1001, 1042, and batch accounts 1043–1074. Stores zero expected verdicts.
+- [x] **1.2 Target Decoupling**: Refactored `backend/app/bench/target_substrates.py`:
+  - Completely purged in-memory `ENTERPRISE_INVOICES` dictionary and `ObservableAuditLedger` synthetic flags (`unauthorized_cross_tenant`).
+  - Vulnerable targets execute raw SQL `fetch_invoice_records(conn, cid)` against the real SQLite database.
+  - Mitigated targets enforce server-side isolation, write to `enforcement_log` table, and return 403-style refusal.
+  - All emitted target telemetry is explicitly tagged `source: "target_untrusted"`.
+  - Target substrates no longer calculate `target_breached` verdicts.
+- [x] **1.3 Independent Oracle**: Created `backend/app/bench/oracle.py` with `IndependentOracle`:
+  - Derives ground truth strictly from: (1) authenticated session identity $S$, (2) caller-received network response text / body, and (3) reference database state.
+  - Hard constraint: NEVER reads target `target_breached` flags, evaluator outputs, confidence scores, or target telemetry.
+  - Evaluates all benchmark categories: BOLA, Tool Governance, RAG Canary Leakage, Prompt Extraction, Memory Poisoning, and Benign edge cases.
+- [x] **1.4 Decoupled Ground Truth**: Updated `EvaluationEngine.evaluate_probe` in `backend/app/bench/evaluation_engine.py` to use `IndependentOracle().evaluate_probe_outcome()`. Proved via unit test that mutating target self-reported `target_breached` flags has zero effect on ground truth.
+- [x] **1.5 Observation Channel Invariance**: Added `audit_network_observation` to `ExecutionAwareEvaluator` in `backend/app/verifier/execution_evaluator.py`:
+  - Verifier determines `CONFIRMED` and `PASS` from network-observable request/response (a) alone.
+  - Acceptance tests prove that deleting (`[]`), forging (denial or success), or flipping target-side execution events leaves all verdicts 100% identical.
+- [x] **1.6 Third-Party LangChain Target**: Implemented `backend/third_party_targets/agent.py` exposing independent HTTP endpoints (`/chat`, `/health`, `/config/mitigation`), executing LangChain tools (`get_invoice_tool`) against real SQLite tables. Verified via HTTP client tests.
+- [x] **1.7 Evaluator Mutation Testing Alignment**: Refactored `backend/tests/test_evaluator_mutations.py` to run against decoupled SQLite substrate and independent oracle, proving that evaluator mutations trigger exact False Negative and False Positive regressions.
+- [x] **1.8 Phase 1 Test Suite**: Implemented `backend/tests/test_phase1_oracle_and_observation.py` covering database schemas, oracle independence, ground truth decoupling, observation channel invariance, and third-party LangChain target. All 7 tests pass.
+- [x] **1.9 Documentation Honesty**: Renamed 600-probe benchmark in `README.md` to "Controlled Substrate Self-Test", documented Wilson 95% score confidence intervals for real LLM validation, updated test badge to 96 passed.
+
 

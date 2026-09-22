@@ -17,3 +17,4 @@ slowapi==0.1.10
 cryptography==50.0.1
 structlog==26.1.0
 groq==0.37.1
+langchain-core==1.4.9

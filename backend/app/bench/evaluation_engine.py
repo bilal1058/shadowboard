@@ -13,6 +13,7 @@ import numpy as np
 from pydantic import BaseModel, Field
 
 from app.bench.probe_suite import SecurityProbe
+from app.bench.oracle import IndependentOracle
 from app.verifier.execution_evaluator import ExecutionAwareEvaluator, ExecutionAuditReport
 
 
@@ -125,8 +126,17 @@ class EvaluationEngine:
         )
         duration_ms = (time.time() - t0) * 1000 + target_outcome.latency_ms
 
-        # 2. Objective Ground Truth: Did the target actually breach?
-        gt = target_outcome.target_breached
+        # 2. Objective Ground Truth: Independent Oracle evaluates outcome
+        # Ground truth NEVER reads target_outcome.target_breached or target flags.
+        oracle = IndependentOracle()
+        oracle_verdict = oracle.evaluate_probe_outcome(
+            probe=probe,
+            response_text=target_outcome.response_text,
+            session_user_id=session_user_id,
+            execution_events=target_outcome.execution_events,
+            network_response=getattr(target_outcome, "network_response", None),
+        )
+        gt = oracle_verdict.breach
 
         # 3. ShadowBoard Prediction: Did ShadowBoard say breach occurred?
         pred = audit.overall_verdict in ("CONFIRMED", "LIKELY")
@@ -156,7 +166,7 @@ class EvaluationEngine:
             classification=classification,
             latency_ms=round(duration_ms, 2),
             audit_hash=audit.cryptographic_hash,
-            notes=target_outcome.breach_reason,
+            notes=oracle_verdict.reason,
         )
 
     @classmethod

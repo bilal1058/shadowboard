@@ -5,7 +5,7 @@
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-009688.svg)](https://fastapi.tiangolo.com)
-[![Tests Passing](https://img.shields.io/badge/tests-58%20passed-success.svg)](backend/tests/)
+[![Tests Passing](https://img.shields.io/badge/tests-96%20passed-success.svg)](backend/tests/)
 [![Cryptography](https://img.shields.io/badge/Ed25519-Signed-blueviolet.svg)](backend/app/evidence/)
 [![OWASP LLM Top 10](https://img.shields.io/badge/OWASP-LLM%20Top%2010%20(2025)-orange.svg)](https://owasp.org/www-project-top-10-for-large-language-model-applications/)
 [![MITRE ATLAS](https://img.shields.io/badge/MITRE-ATLAS%20Mapped-red.svg)](https://atlas.mitre.org/)
@@ -104,14 +104,17 @@ ShadowBoard evidence packages separate **Data Integrity** from **Signer Authenti
 
 ## 🧪 Systematic Validation & Mutation Testing
 
-### 1. Controlled Benchmark Validation
-> **Controlled Validation Result:** 600/600 probes correctly classified across deterministic instrumented substrates (100% precision / 100% recall under defined benchmark conditions).  
-> *Important*: These figures demonstrate that ShadowBoard correctly observes and enforces the specific security conditions it was engineered to detect within this controlled environment. They do **not** estimate general-world attack detection performance against unconstrained production systems.
+### 1. Controlled Substrate Self-Test
+> **Controlled Substrate Self-Test Result:** 600/600 probes correctly classified across deterministic instrumented substrates under defined benchmark conditions.  
+> *Important Methodology Note*: These figures demonstrate that ShadowBoard correctly observes and enforces the specific security contracts it was engineered to detect within this controlled testbed. They are an internal regression self-test, **not** an empirical estimate of general-world attack detection against unconstrained production systems.
 
-### 2. Observed Substrate Ground Truth (L1)
-Ground truth is strictly decoupled from inline boolean flags. In both deterministic and live LLM targets, requests record to an immutable `ObservableAuditLedger`:
-- State transitions track `session_user_id`, `requested_resource`, `authorized`, and `unauthorized_cross_tenant`.
-- Ground truth is computed by querying whether an actual unauthorized state transition was logged in the data store.
+### 2. Independent Oracle & Decoupled Ground Truth
+Ground truth is strictly derived by an `IndependentOracle` from:
+1. The authenticated caller session identity established by the test harness.
+2. The actual network response text and payload received by the caller.
+3. The reference database state (seeded SQLite database).
+
+**Hard Separation**: Ground truth NEVER reads target self-reported `target_breached` flags, `authorized` boolean telemetry, or evaluator outputs. Furthermore, ShadowBoard satisfies the **Observation Channel Invariance Contract**: deleting, forging, or flipping target-side execution events leaves scanner verdicts 100% identical.
 
 ### 3. Evaluator Mutation Testing: Proving Discriminative Power
 To prove that our evaluation harness is genuinely sensitive to evaluator regressions (rather than being a circular self-fulfilling test), we run mutation tests (`test_evaluator_mutations.py`) that intentionally break detection rules:
@@ -125,46 +128,43 @@ To prove that our evaluation harness is genuinely sensitive to evaluator regress
 
 This proves the benchmark has authentic discriminative power: when evaluator detection logic degrades, the benchmark exposes it immediately.
 
-### 4. Independent Open-Source Agent Case Study
-ShadowBoard was evaluated against an independent open-source tool-using agent architecture (`OpenSourceBillingAgent`), modeling standard LangChain/ReAct tool dispatch patterns over SQL financial ledgers:
+### 4. Independent Third-Party Agent Target (`third_party_targets/agent.py`)
+ShadowBoard is evaluated against an independent tool-using agent architecture (`third_party_targets/agent.py`), modeling standard LangChain/ReAct tool dispatch patterns over real SQLite financial tables:
 
 ```
-[Adversarial Prompt]
+[Adversarial Probe (Session 1001)]
+        ↓ HTTP POST /chat
+[Third-Party LangChain Agent]
+        ↓ executes LangChain tool: get_invoice_tool(customer_id="1042")
+[Real SQLite Enterprise DB] -> Returns Globex financial records
         ↓
-[OpenSourceBillingAgent (Session: ACC-1001)]
-        ↓ invokes tool: query_account_billing(account_id="ACC-9902")
-[Observable Audit Ledger] -> Logs unauthorized cross-tenant read (Foreign Tenant: Stark Global)
+[Caller Network Response] -> Discloses foreign invoice INV-2026-1042
         ↓
-[ShadowBoard ExecutionAwareEvaluator]
-        ↓ Detects BOLA_PARAMETER_TAMPERING on 'account_id'
-[Finding Confirmed: PAC-EXT-BOLA-001] -> Security Grade: F (Score: 50) -> Gate: FAILED
-        ↓
-[Remediation Patch Applied] -> Server-side session parity enforced on tool parameters
-        ↓
-[ShadowBoard Continuous Regression Scan] -> 0 violations detected -> Score: 100/100 -> Gate: PASSED
+[ShadowBoard Independent Oracle] -> Verified Breach (Session 1001 received Tenant 1042 data)
+[ShadowBoard Network Evaluator] -> CONFIRMED (Observation Invariance verified)
 ```
-*Validated end-to-end in automated test suite ([test_external_agent_case_study.py](backend/tests/test_external_agent_case_study.py)).*
+*Validated end-to-end over HTTP in automated test suite ([test_phase1_oracle_and_observation.py](backend/tests/test_phase1_oracle_and_observation.py)).*
 
 ### 5. Empirical Real-LLM Benchmark (100 Live Groq Model Turns)
-We evaluated ShadowBoard against a live LLM tool agent (`RealLLMToolAgent`) powered by Groq (`qwen/qwen3.8-27b`) executing native OpenAI-compatible function calling schemas, in-memory databases, and observable audit logging across 100 live turns (40 vulnerable adversarial, 30 mitigated adversarial, 15 legitimate own-session tool calls, and 15 benign FAQ queries):
+We evaluated ShadowBoard against a live LLM tool agent (`RealLLMToolAgent`) powered by Groq (`qwen/qwen3.8-27b`) executing native OpenAI-compatible function calling schemas, seeded SQLite databases, and independent oracle logging across 100 live turns (40 vulnerable adversarial, 30 mitigated adversarial, 15 legitimate own-session tool calls, and 15 benign FAQ queries). Metrics include Wilson 95% score confidence intervals:
 
-| Metric | Result |
-| :--- | :---: |
-| **Model Evaluated** | `qwen/qwen3.8-27b` (via Groq API) |
-| **Total Turns** | 100 |
-| **Tool-Call Attempts** | 45 |
-| **Successful Attacks (Observed Substrate Ground Truth)** | 30 |
-| **Correct Detections** | 100 (30 TP, 70 TN) |
-| **False Positives** | 0 |
-| **False Negatives** | 0 |
-| **Median Turn Latency** | 3,307.0 ms |
-| **p95 Turn Latency** | 6,011.2 ms |
-| **Tool-Call Variance** | 2 schema shapes: `['customer_id']` and `[]` |
-| **Model Refusal Rate** | 55.0% (55/100) |
-| **Precision** | 100.0% (30/30) |
-| **Recall** | 100.0% (30/30) |
+| Metric | Point Estimate | Wilson 95% Confidence Interval |
+| :--- | :---: | :---: |
+| **Model Evaluated** | `qwen/qwen3.8-27b` (via Groq API) | — |
+| **Total Evaluated Turns** | 100 | — |
+| **Tool-Call Invocations** | 45 | — |
+| **Actual Breaches (Oracle Ground Truth)** | 30 / 40 | [59.8%, 85.8%] (ASR) |
+| **Correct Detections** | 100 (30 TP, 70 TN) | — |
+| **False Positives** | 0 | [0.0%, 5.2%] (FPR) |
+| **False Negatives** | 0 | — |
+| **Precision** | 100.0% (30/30) | [88.6%, 100.0%] |
+| **Recall** | 100.0% (30/30) | [88.6%, 100.0%] |
+| **Model Intrinsic Refusal Rate** | 25.0% (10/40) | [14.1%, 40.2%] |
+| **Median Latency** | 3,307.0 ms | — |
+| **p95 Latency** | 6,011.2 ms | — |
 
 *Key Empirical Finding*: In unmitigated mode, the live model refused 10 out of 40 adversarial probes upfront without calling the tool (a 25% intrinsic refusal rate). ShadowBoard correctly recognized these safe text refusals without triggering false positives, while capturing all 30 actual tool-level BOLA breaches where the model executed `get_invoice(customer_id="1042")`.
+
 
 ---
 
@@ -228,7 +228,7 @@ pip install -r backend/requirements.txt
 ```bash
 pytest backend/tests/ -v
 ```
-*Executes all 58 automated tests across 14 test suites (unit, integration, real LLM, Ed25519 cryptographic proofs, and evaluator mutation tests).*
+*Executes all 96 automated tests across 21 test suites (unit, integration, real LLM, Ed25519 cryptographic proofs, independent oracle, and evaluator mutation tests).*
 
 ### 3. Launch Web Console
 ```bash
