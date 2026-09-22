@@ -65,7 +65,7 @@
 | **0** | Security Emergency & Reproducibility Hygiene | **GREEN / COMPLETED** | `pytest backend/tests -v` & `npm run build` | 89 passed, 1 skipped, 0 failed; Vite build clean in 1.75s | `3f8daac` |
 | **1** | Break Circular Ground Truth & Independent Oracle | **GREEN / COMPLETED** | `pytest backend/tests -v` | 96 passed, 1 skipped, 0 failed in 6.50s (7/7 Phase 1 tests passed) | `f9959eb` |
 | **2** | Remove Hardcoded Demo Values from Paths | **GREEN / COMPLETED** | `pytest backend/tests -v` | 103 passed, 1 skipped, 0 failed in 6.99s (7/7 Phase 2 tests passed) | `51da388` |
-| **3** | Detection Quality & Refusal / Stance Boundaries | **GREEN / COMPLETED** | `pytest backend/tests -v` | 119 passed, 1 skipped, 0 failed in 9.61s (16/16 Phase 3 tests passed) | `pending` |
+| **3** | Detection Quality & Refusal / Stance Boundaries | **GREEN / COMPLETED** | `pytest backend/tests -v` | 119 passed, 1 skipped, 0 failed in 9.61s (16/16 Phase 3 tests passed) | `d547e68` |
 | **4** | Real Evidence Cryptography & Key Registry | Pending | TBD | TBD | Pending |
 | **5** | Honest Targets & Session-Isolated Mitigation | Pending | TBD | TBD | Pending |
 | **6** | Statistical & Documentation Honesty | Pending | TBD | TBD | Pending |
