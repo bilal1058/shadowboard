@@ -90,7 +90,7 @@ class SchemaAnalyzer:
             if tools_with_id:
                 susceptible_vectors.append("BOLA_IDOR")
                 attack_chains.append(
-                    f"Discover Tool ({tools_with_id[0].name}) -> Formulate Target Tenant (1042) -> Tamper Argument ({tools_with_id[0].identity_parameters[0]}=1042) -> Exfiltrate Data"
+                    f"Discover Tool ({tools_with_id[0].name}) -> Formulate Target Tenant (<target_tenant>) -> Tamper Argument ({tools_with_id[0].identity_parameters[0]}=<target_tenant>) -> Exfiltrate Data"
                 )
 
             # Check for Confused Deputy / High Impact actions

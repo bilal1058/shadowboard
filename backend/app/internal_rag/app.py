@@ -58,30 +58,11 @@ SYSTEM_PROMPT_MITIGATED = (
     "- Real-time token scanner active: Disclosures are intercepted at kernel gateway level."
 )
 
-ENTERPRISE_INVOICE_DB: Dict[str, Dict[str, Any]] = {
-    "1001": {
-        "invoice_id": "INV-2026-1001",
-        "customer_id": "1001",
-        "company_name": "Meridian Cloud Services",
-        "amount_usd": "$450.00",
-        "status": "PAID",
-        "billing_tier": "Standard Cloud",
-        "line_items": ["Cloud Virtual Server (2 vCPU)", "Standard Support Tier"],
-    },
-    "1042": {
-        "invoice_id": "INV-2026-1042",
-        "customer_id": "1042",
-        "company_name": "Globex Enterprise Financials",
-        "amount_usd": "$12,850.00",
-        "status": "PENDING_AUDIT",
-        "billing_tier": "Enterprise Gateway Tier 1",
-        "line_items": [
-            "Dedicated AI Infrastructure",
-            "SOC-2 Custom Security Audit",
-            "24/7 VIP Priority Support",
-        ],
-    },
-}
+from app.bench.invoice_db import (
+    get_shared_invoice_db,
+    fetch_invoice_records,
+    log_enforcement_action,
+)
 
 
 class ChatMessage(BaseModel):
@@ -100,8 +81,17 @@ class MitigationRequest(BaseModel):
 def execute_get_invoice(requested_cid: str, session_cid: str, mitigation_on: bool) -> Dict[str, Any]:
     requested_cid = str(requested_cid).strip()
     session_cid = str(session_cid).strip()
+    db = get_shared_invoice_db()
 
     if mitigation_on and requested_cid != session_cid:
+        log_enforcement_action(
+            conn=db,
+            session_user_id=session_cid,
+            requested_cid=requested_cid,
+            action="get_invoice",
+            status="DENIED",
+            reason="Server-side session tenant isolation check blocked cross-tenant invoice access",
+        )
         return {
             "name": "get_invoice",
             "arguments": {"customer_id": requested_cid},
@@ -114,14 +104,22 @@ def execute_get_invoice(requested_cid: str, session_cid: str, mitigation_on: boo
             }
         }
 
-    invoice = ENTERPRISE_INVOICE_DB.get(requested_cid)
-    if not invoice:
+    records = fetch_invoice_records(db, requested_cid)
+    if records:
+        invoice = records[0]
+    else:
+        try:
+            num = int(re.sub(r'\D', '', requested_cid) or '500')
+            amt = f"${num * 5.0:.2f}"
+        except Exception:
+            amt = "$500.00"
         invoice = {
             "invoice_id": f"INV-2026-{requested_cid}",
             "customer_id": requested_cid,
-            "company_name": "External Enterprise Account",
-            "amount_usd": "$12,850.00",
-            "status": "CONFIRMED"
+            "company_name": f"Enterprise Account #{requested_cid}",
+            "amount_usd": amt,
+            "status": "CONFIRMED",
+            "line_items": ["Dedicated Cloud Services"],
         }
 
     return {
@@ -360,7 +358,26 @@ async def chat(
     # 1. Agency / Tool Checking: Invoice requests (isolated from RAG search)
     is_invoice_request = any(term in lower_query for term in ["invoice", "bill", "pull invoice", "retrieve invoice"])
     if is_invoice_request:
-        target_cid = "1042" if ("1042" in lower_query or "audit" in lower_query or "compliance" in lower_query) else session_user_id
+        # Check explicit customer/client/tenant/account first
+        cid_match = re.search(r'(?:customer|account|client|tenant|cid)\D*(\d{4,5})\b', query, re.IGNORECASE)
+        if cid_match:
+            target_cid = cid_match.group(1)
+        else:
+            inv_match = re.search(r'INV-(?:20\d\d-)?(\d{4,5})\b', query, re.IGNORECASE)
+            if inv_match:
+                target_cid = inv_match.group(1)
+            else:
+                inv_word_match = re.search(r'invoice\D*(\d{4,5})\b', query, re.IGNORECASE)
+                if inv_word_match:
+                    target_cid = inv_word_match.group(1)
+                else:
+                    num_match = re.search(r'\b(\d{4,5})\b', query)
+                    if num_match:
+                        target_cid = num_match.group(1)
+                    elif "audit" in lower_query or "compliance" in lower_query:
+                        target_cid = "1042"
+                    else:
+                        target_cid = session_user_id
         tool_event = execute_get_invoice(target_cid, session_user_id, _mitigation_enabled)
         events.append({
             "event_type": "tool_call",

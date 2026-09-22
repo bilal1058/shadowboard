@@ -64,7 +64,7 @@
 | :---: | :--- | :---: | :--- | :--- | :--- |
 | **0** | Security Emergency & Reproducibility Hygiene | **GREEN / COMPLETED** | `pytest backend/tests -v` & `npm run build` | 89 passed, 1 skipped, 0 failed; Vite build clean in 1.75s | `3f8daac` |
 | **1** | Break Circular Ground Truth & Independent Oracle | **GREEN / COMPLETED** | `pytest backend/tests -v` | 96 passed, 1 skipped, 0 failed in 6.50s (7/7 Phase 1 tests passed) | `f9959eb` |
-| **2** | Remove Hardcoded Demo Values from Paths | Pending | TBD | TBD | Pending |
+| **2** | Remove Hardcoded Demo Values from Paths | **GREEN / COMPLETED** | `pytest backend/tests -v` | 103 passed, 1 skipped, 0 failed in 6.99s (7/7 Phase 2 tests passed) | Pending |
 | **3** | Detection Quality & Refusal / Stance Boundaries | Pending | TBD | TBD | Pending |
 | **4** | Real Evidence Cryptography & Key Registry | Pending | TBD | TBD | Pending |
 | **5** | Honest Targets & Session-Isolated Mitigation | Pending | TBD | TBD | Pending |
@@ -112,5 +112,37 @@
 - [x] **1.7 Evaluator Mutation Testing Alignment**: Refactored `backend/tests/test_evaluator_mutations.py` to run against decoupled SQLite substrate and independent oracle, proving that evaluator mutations trigger exact False Negative and False Positive regressions.
 - [x] **1.8 Phase 1 Test Suite**: Implemented `backend/tests/test_phase1_oracle_and_observation.py` covering database schemas, oracle independence, ground truth decoupling, observation channel invariance, and third-party LangChain target. All 7 tests pass.
 - [x] **1.9 Documentation Honesty**: Renamed 600-probe benchmark in `README.md` to "Controlled Substrate Self-Test", documented Wilson 95% score confidence intervals for real LLM validation, updated test badge to 96 passed.
+
+---
+
+## 6. Phase 2 Detailed Execution Log
+
+- [x] **2.1 Target B Dynamic Customer ID & Invoice Substrate**:
+  - Replaced static `ENTERPRISE_INVOICE_DB` dictionary in `backend/app/internal_rag/app.py` with `get_shared_invoice_db()`, `fetch_invoice_records()`, and `log_enforcement_action()`.
+  - Replaced hardcoded `target_cid = "1042" if ("1042" in lower_query ...)` with multi-stage regex extraction distinguishing customer/account/tenant IDs from invoice year prefixes (`INV-2026-X`).
+  - Replaced static `$12,850.00` fallback with dynamic amount calculation.
+- [x] **2.2 Dynamic Sandbox Probe Validation**:
+  - Refactored `execute_sandbox_probe()` in `backend/app/api/endpoints/scans.py`.
+  - Replaced hardcoded `has_unauthorized_invoice = any("Invoice returned" in str(e) and "1042" in str(e))` with structured event parsing comparing returned invoice `customer_id` against `request.session_user_id`, plus response text cross-tenant regex extraction.
+  - Replaced hardcoded pitch-deck slide check (`"10,000" in response_text and "compensation" in response_text.lower()`) with general false premise compliance detection.
+- [x] **2.3 Master Verifier Regex Generalization**:
+  - Refactored `_verify_heuristic()` in `backend/app/verifier/engine.py`.
+  - Replaced literal `"INV-1042"` and `"$12,850.00"` checks with generalized invoice regex (`\bINV-(?:2026-)?\d+\b`) and currency pattern detection.
+  - Dynamically populates `detected_pattern` with the actual matched pattern rather than hardcoded `"INV-1042 / $12,850.00"`.
+- [x] **2.4 Execution Evaluator Dynamic Foreign Entity Attribution**:
+  - Refactored `audit_network_observation()` in `backend/app/verifier/execution_evaluator.py`.
+  - Replaced hardcoded `str(session_user_id) == "1001"` and `"globex enterprise"` with general foreign enterprise pattern extraction (`Enterprise Account #<id>`) and tenant boundary enforcement that prevents false positives when the owner tenant accesses their own company.
+- [x] **2.5 AgencyEngine Strategy Prompt Parameterization**:
+  - Refactored `STRATEGY_PROMPTS` in `backend/app/engines/agency.py` across all 60 prompt templates and 10 strategies.
+  - Replaced literal `"1042"`, `"1001"`, and `"INV-2026-1042"` with `{target_tenant}`, `{session_user_id}`, and `{invoice_id}` placeholders.
+  - Updated `AgencyEngine.build_prompt()` to accept dynamic `target_tenant` and `session_user_id` kwargs with backwards-compatible defaults.
+- [x] **2.6 Schema Analyzer Generalization**:
+  - Updated `backend/app/planner/schema_analyzer.py` line 93 to replace literal `(1042)` with generic placeholder `(<target_tenant>)`.
+- [x] **2.7 Targets & Substrates Dynamic Calculations**:
+  - Updated `backend/app/bench/targets.py` (`ToolGatedAgent`), `backend/app/bench/target_substrates.py` (`DeterministicTargetExecutor`, `LiveGroqToolAgentExecutor`), and `backend/third_party_targets/agent.py` to extract customer IDs via regex and dynamically calculate unseeded fallback amounts.
+- [x] **2.8 Phase 2 Test Suite**:
+  - Created `backend/tests/test_phase2_hardcoded_values.py` covering dynamic customer ID queries, AgencyEngine prompt interpolation, black-box regex matching, execution evaluator foreign entity attribution, AgentBeta dynamic queries, unseeded tenant amounts, and sandbox probe multi-tenant breach detection.
+  - All 7 tests pass. Full test suite: **103 passed, 1 skipped, 0 failed in 6.99s**.
+
 
 

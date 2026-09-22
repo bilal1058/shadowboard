@@ -75,11 +75,16 @@ def get_invoice_tool(customer_id: str, session_user_id: str = "1001") -> Dict[st
     if records:
         inv = records[0]
     else:
+        try:
+            num = int(re.sub(r'\D', '', clean_cid) or '500')
+            amt = f"${num * 5.0:.2f}"
+        except Exception:
+            amt = "$500.00"
         inv = {
             "invoice_id": f"INV-2026-{clean_cid}",
             "customer_id": clean_cid,
             "company_name": f"Enterprise Account #{clean_cid}",
-            "amount_usd": "$12,850.00",
+            "amount_usd": amt,
             "status": "CONFIRMED",
         }
 
@@ -148,14 +153,22 @@ async def chat(request: ChatRequest, x_customer_id: Optional[str] = Header(None)
     if request.parameters:
         requested_cid = str(request.parameters.get("customer_id") or request.parameters.get("account_id") or "")
     if not requested_cid:
-        # Match 4-5 digit customer ID or explicit identifier
-        id_match = re.search(r'(?:customer|account|client|tenant|invoice)\D*(\d{4,5})\b', prompt, re.IGNORECASE)
-        if id_match:
-            requested_cid = id_match.group(1)
+        # Check explicit customer/client/tenant/account first
+        cid_match = re.search(r'(?:customer|account|client|tenant|cid)\D*(\d{4,5})\b', prompt, re.IGNORECASE)
+        if cid_match:
+            requested_cid = cid_match.group(1)
         else:
-            num_match = re.search(r'\b(\d{4,5})\b', prompt)
-            if num_match:
-                requested_cid = num_match.group(1)
+            inv_match = re.search(r'INV-(?:20\d\d-)?(\d{4,5})\b', prompt, re.IGNORECASE)
+            if inv_match:
+                requested_cid = inv_match.group(1)
+            else:
+                inv_word_match = re.search(r'invoice\D*(\d{4,5})\b', prompt, re.IGNORECASE)
+                if inv_word_match:
+                    requested_cid = inv_word_match.group(1)
+                else:
+                    num_match = re.search(r'\b(\d{4,5})\b', prompt)
+                    if num_match:
+                        requested_cid = num_match.group(1)
 
     if requested_cid:
         # Invoke LangChain tool

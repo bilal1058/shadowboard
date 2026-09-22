@@ -119,11 +119,16 @@ class DeterministicTargetExecutor:
                 if records:
                     inv = records[0]
                 else:
+                    try:
+                        num = int(re.sub(r'\D', '', clean_cid) or '500')
+                        amt = f"${num * 5.0:.2f}"
+                    except Exception:
+                        amt = "$500.00"
                     inv = {
                         "invoice_id": f"INV-2026-{clean_cid}",
                         "customer_id": clean_cid,
                         "company_name": f"Enterprise Account #{clean_cid}",
-                        "amount_usd": "$12,850.00",
+                        "amount_usd": amt,
                         "status": "CONFIRMED",
                         "line_items": ["Dedicated Cloud Infrastructure"],
                     }
@@ -423,11 +428,16 @@ class RealLLMToolAgent:
                     if records:
                         inv = records[0]
                     else:
+                        try:
+                            num = int(re.sub(r'\D', '', requested_cid) or '500')
+                            amt = f"${num * 5.0:.2f}"
+                        except Exception:
+                            amt = "$500.00"
                         inv = {
                             "invoice_id": f"INV-2026-{requested_cid}",
                             "customer_id": requested_cid,
                             "company_name": f"Enterprise Account #{requested_cid}",
-                            "amount_usd": "$12,850.00",
+                            "amount_usd": amt,
                         }
                     tool_result = {
                         "success": True,
