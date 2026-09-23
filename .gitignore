@@ -36,6 +36,10 @@ env/
 backend/.env
 frontend/.env
 *.local
+*.pem
+*.key
+.keys/
+backend/.keys/
 
 # Database files
 *.db

@@ -2,18 +2,75 @@
 
 from fastapi import APIRouter, HTTPException, Depends, Response
 from pydantic import BaseModel
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import aiosqlite
 import json
 
 from app.db.session import get_db
-from app.evidence import EvidenceBundler, StandaloneVerifier
+from app.evidence import EvidenceBundler, StandaloneVerifier, get_active_key_registry
 
 router = APIRouter(prefix="/evidence", tags=["Verifiable Evidence"])
 
 
 class VerifyEvidenceRequest(BaseModel):
     package_data: Dict[str, Any]
+    enforce_active_key: bool = False
+
+
+class RevokeKeyRequest(BaseModel):
+    reason: str = "Key rotated or retired"
+
+
+class RotateKeyRequest(BaseModel):
+    new_key_id: Optional[str] = None
+
+
+@router.get("/keys")
+def list_public_keys():
+    """Lists all registered Ed25519 public signing keys and their statuses (never exposes private keys)."""
+    registry = get_active_key_registry()
+    keyring = registry.export_keyring()
+    return {
+        "active_key_id": keyring["active_key_id"],
+        "keys": keyring["keys"],
+    }
+
+
+@router.get("/keys/{key_id}")
+def get_public_key(key_id: str):
+    """Retrieves metadata and public key for a specific registered signing key."""
+    registry = get_active_key_registry()
+    record = registry.get_key(key_id)
+    if not record:
+        raise HTTPException(status_code=404, detail=f"Key ID '{key_id}' not found in registry")
+    return record.model_dump()
+
+
+@router.post("/keys/rotate")
+def rotate_signing_key(request: RotateKeyRequest = None):
+    """Rotates to a newly generated private signing key, keeping old key registered for historical verification."""
+    registry = get_active_key_registry()
+    req_kid = request.new_key_id if request else None
+    _, new_record = registry.rotate_key(new_key_id=req_kid)
+    return {
+        "status": "ROTATED",
+        "new_key": new_record.model_dump(),
+        "active_key_id": new_record.key_id,
+    }
+
+
+@router.post("/keys/{key_id}/revoke")
+def revoke_signing_key(key_id: str, request: RevokeKeyRequest = RevokeKeyRequest()):
+    """Revokes a signing key, causing future verification of packages signed with this key to fail."""
+    registry = get_active_key_registry()
+    try:
+        record = registry.revoke_key(key_id=key_id, reason=request.reason)
+        return {
+            "status": "REVOKED",
+            "key": record.model_dump(),
+        }
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Key ID '{key_id}' not found in registry")
 
 
 @router.get("/{finding_id}/package")
@@ -91,10 +148,16 @@ async def get_evidence_package(finding_id: str, db: aiosqlite.Connection = Depen
 
 @router.post("/verify")
 def verify_offline_package(request: VerifyEvidenceRequest):
-    """Verifies the cryptographic integrity and authenticity of an evidence package."""
-    valid, message, summary = StandaloneVerifier.verify_package(request.package_data)
+    """Verifies the cryptographic integrity and authenticity of an evidence package against the KeyRegistry."""
+    registry = get_active_key_registry()
+    valid, message, summary = StandaloneVerifier.verify_package(
+        request.package_data,
+        key_registry=registry,
+        enforce_active_key=request.enforce_active_key,
+    )
     return {
         "verified": valid,
         "message": message,
         "summary": summary,
     }
+

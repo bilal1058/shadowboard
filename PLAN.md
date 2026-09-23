@@ -66,7 +66,7 @@
 | **1** | Break Circular Ground Truth & Independent Oracle | **GREEN / COMPLETED** | `pytest backend/tests -v` | 96 passed, 1 skipped, 0 failed in 6.50s (7/7 Phase 1 tests passed) | `f9959eb` |
 | **2** | Remove Hardcoded Demo Values from Paths | **GREEN / COMPLETED** | `pytest backend/tests -v` | 103 passed, 1 skipped, 0 failed in 6.99s (7/7 Phase 2 tests passed) | `51da388` |
 | **3** | Detection Quality & Refusal / Stance Boundaries | **GREEN / COMPLETED** | `pytest backend/tests -v` | 119 passed, 1 skipped, 0 failed in 9.61s (16/16 Phase 3 tests passed) | `d547e68` |
-| **4** | Real Evidence Cryptography & Key Registry | Pending | TBD | TBD | Pending |
+| **4** | Real Evidence Cryptography & Key Registry | **GREEN / COMPLETED** | `pytest backend/tests` | 136 passed, 1 skipped, 0 failed in 6.93s (17/17 Phase 4 tests passed) | `TBD` |
 | **5** | Honest Targets & Session-Isolated Mitigation | Pending | TBD | TBD | Pending |
 | **6** | Statistical & Documentation Honesty | Pending | TBD | TBD | Pending |
 | **7** | Permanent CI Regression Enforcement Suite | Pending | TBD | TBD | Pending |
@@ -165,6 +165,45 @@
 - [x] **3.6 Phase 3 Test Suite**:
   - Created `backend/tests/test_phase3_detection_quality.py` with 16 tests covering prompt canary echo attribution, unprompted canary leakage, runtime action precedence over polite apologies, network observer refusal unmasking, dynamic confidence variability across all evaluators, and modern refusal/evasive boundaries.
   - All 16 tests pass. Full test suite: **119 passed, 1 skipped, 0 failed in 9.61s**.
+
+---
+
+## 8. Phase 4 Detailed Execution Log
+
+- [x] **4.1 Binary Merkle Tree Implementation**:
+  - Implemented `MerkleTree` in `backend/app/evidence/merkle.py` with deterministic JSON serialization (`canonical_json_bytes`).
+  - Domain separation: leaf hashing uses prefix byte `0x00`, internal node hashing uses prefix byte `0x01` (prevents second preimage attacks).
+  - Implemented audit path generation (`get_inclusion_proof(index)`) and independent audit path verification (`verify_inclusion(item, proof, root)`).
+  - Proved event order sensitivity and tamper resistance via unit tests.
+- [x] **4.2 Key Registry & PKI System**:
+  - Created `backend/app/evidence/key_registry.py` with `KeyRecord` metadata model and `KeyRegistry` manager.
+  - Supports persistent private key loading and generation from `SIGNING_KEY_PATH` (PEM PKCS#8 format) with fallback to instance directory `backend/.keys/shadowboard_signing_key.pem`.
+  - Supports key rotation (`rotate_key`) maintaining previous keys for historical verification.
+  - Supports key revocation (`revoke_key`) with timestamps and structured revocation reasons.
+  - Provides JSON export (`export_keyring`) and import (`import_keyring`) for offline third-party audit verification.
+  - Provided singleton `get_active_key_registry()` and test isolation helper `reset_key_registry()`.
+- [x] **4.3 Evidence Bundler Cryptographic Proof**:
+  - Updated `backend/app/evidence/bundler.py`:
+    - Updated `CryptographicProof` model to embed `key_id`, `event_merkle_root`, and public key hex.
+    - Updated `EvidenceBundler.create_package` to fetch active key and key ID from `get_active_key_registry()`, compute both the linear Merkle chain hash and binary Merkle tree root over execution events, sign the canonical payload with real Ed25519, and register public key.
+- [x] **4.4 Standalone Verifier Offline Verification**:
+  - Updated `backend/app/evidence/standalone_verifier.py`:
+    - Verifies linear event chain hash, binary Merkle tree root, manifest hash, and Ed25519 digital signature.
+    - Integrated with `KeyRegistry`: immediately rejects packages signed with revoked keys (`KEY_REVOKED`), verifies public key parity, and supports enforcing active-only keys.
+    - Added `verify_event_inclusion` method to verify specific events within evidence packages.
+    - Updated CLI to accept `--keyring <file.json>` and `--enforce-active`.
+- [x] **4.5 Evidence API Endpoints**:
+  - Added public key discovery and lifecycle endpoints to `backend/app/api/endpoints/evidence.py`:
+    - `GET /api/evidence/keys`: lists all registered public keys and active key ID (never exposes private keys).
+    - `GET /api/evidence/keys/{key_id}`: returns metadata for a specific key.
+    - `POST /api/evidence/keys/rotate`: rotates to a fresh signing key.
+    - `POST /api/evidence/keys/{key_id}/revoke`: revokes a key with reason.
+  - Updated `POST /api/evidence/verify` to validate packages against `get_active_key_registry()`.
+- [x] **4.6 Key Security & Git Protection**:
+  - Added `*.pem`, `*.key`, `.keys/`, and `backend/.keys/` to `.gitignore` to guarantee signing keys are never committed to git.
+- [x] **4.7 Phase 4 Test Suite**:
+  - Created `backend/tests/test_phase4_cryptography.py` with 17 tests covering: Merkle tree construction, multi-event inclusion proofs, event order sensitivity, key registry initialization, key rotation, key revocation, keyring export/import, PEM file loading, evidence package signing & standalone verification, trace tampering detection, manifest tampering detection, response text tampering detection, signature bit-flip detection, revoked key rejection, and all evidence key API endpoints.
+  - All 17 tests pass. Full test suite: **136 passed, 1 skipped, 0 failed in 6.93s**.
 
 
 

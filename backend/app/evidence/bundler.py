@@ -15,6 +15,9 @@ from pydantic import BaseModel, Field
 from cryptography.hazmat.primitives.asymmetric import ed25519
 from cryptography.hazmat.primitives import serialization
 
+from app.evidence.merkle import MerkleTree
+from app.evidence.key_registry import get_active_key_registry, KeyRecord
+
 
 def canonical_hash(obj: Any) -> str:
     serialized = json.dumps(obj, sort_keys=True, separators=(",", ":"))
@@ -38,6 +41,7 @@ class CryptographicProof(BaseModel):
     # 1. Integrity (detects bit tampering and reordering)
     integrity_algorithm: str = "SHA256-MERKLE-CHAIN-V1"
     event_chain_hash: str
+    event_merkle_root: str = ""
     manifest_hash: str
     canonical_payload_hash: str
 
@@ -45,6 +49,7 @@ class CryptographicProof(BaseModel):
     authenticity_algorithm: str = "ED25519-RFC8032"
     signature_ed25519_hex: str
     signer_public_key_hex: str
+    key_id: str = "sb_key_primary"
     
     # Backward compatibility field (legacy alias for canonical_payload_hash)
     package_signature: str = ""
@@ -84,12 +89,16 @@ class EvidencePackage(BaseModel):
         return json.dumps(self.model_dump(), indent=2, sort_keys=True)
 
 
-# Default ephemeral signing key for the local ShadowBoard instance
-_DEFAULT_PRIVATE_KEY = ed25519.Ed25519PrivateKey.generate()
+# Module-level legacy reference pointing to active key registry
+def _get_default_private_key() -> ed25519.Ed25519PrivateKey:
+    key, _ = get_active_key_registry().get_active_signing_key()
+    return key
+
+_DEFAULT_PRIVATE_KEY = property(lambda self: _get_default_private_key())
 
 
 class EvidenceBundler:
-    """Creates independently verifiable evidence packages with Ed25519 digital signatures."""
+    """Creates independently verifiable evidence packages with Ed25519 digital signatures and KeyRegistry."""
 
     @classmethod
     def create_package(
@@ -111,12 +120,14 @@ class EvidenceBundler:
         target_mode: str = "INSTRUMENTED",
         code_patch: Optional[str] = None,
         signing_key: Optional[ed25519.Ed25519PrivateKey] = None,
+        key_id: Optional[str] = None,
         substrate_truth_level: str = "TARGET_INSTRUMENTED",
     ) -> EvidencePackage:
         pkg_id = f"SBEV-{int(time.time())}-{finding_id[-8:]}"
 
-        # 1. Compute Integrity Hashes (Merkle chain over trace + canonical manifest hash)
+        # 1. Compute Integrity Hashes (Linear Merkle chain + Binary Merkle tree root)
         event_chain_hash = compute_event_chain_hash(execution_events)
+        event_merkle_root = MerkleTree(execution_events).root
 
         manifest_data = {
             "pkg_id": pkg_id,
@@ -135,29 +146,47 @@ class EvidenceBundler:
         }
         canonical_payload_hash = canonical_hash(combined_payload)
 
-        # 2. Compute Authenticity: Sign the canonical payload hash with real Ed25519 private key
-        key = signing_key or _DEFAULT_PRIVATE_KEY
+        # 2. Key Registry & Authenticity: Sign the canonical payload hash with real Ed25519 private key
+        registry = get_active_key_registry()
+        if signing_key:
+            key = signing_key
+            effective_key_id = key_id or "custom_ephemeral_key"
+        else:
+            key, registered_kid = registry.get_active_signing_key()
+            effective_key_id = key_id or registered_kid
+
         public_key = key.public_key()
-        
-        # Ed25519 signs the canonical payload bytes
-        sig_bytes = key.sign(canonical_payload_hash.encode("utf-8"))
-        signature_ed25519_hex = sig_bytes.hex()
-        
-        # Serialize public key to raw hex bytes for verification
         pub_bytes = public_key.public_bytes(
             encoding=serialization.Encoding.Raw,
             format=serialization.PublicFormat.Raw,
         )
         signer_public_key_hex = pub_bytes.hex()
 
+        # Ensure public key is registered in registry
+        if not registry.get_key(effective_key_id):
+            registry.register_public_key(
+                KeyRecord(
+                    key_id=effective_key_id,
+                    public_key_hex=signer_public_key_hex,
+                    status="ACTIVE",
+                    description="Evidence signing key",
+                )
+            )
+
+        # Ed25519 signs the canonical payload bytes
+        sig_bytes = key.sign(canonical_payload_hash.encode("utf-8"))
+        signature_ed25519_hex = sig_bytes.hex()
+
         proof = CryptographicProof(
             integrity_algorithm="SHA256-MERKLE-CHAIN-V1",
             event_chain_hash=event_chain_hash,
+            event_merkle_root=event_merkle_root,
             manifest_hash=manifest_hash,
             canonical_payload_hash=canonical_payload_hash,
             authenticity_algorithm="ED25519-RFC8032",
             signature_ed25519_hex=signature_ed25519_hex,
             signer_public_key_hex=signer_public_key_hex,
+            key_id=effective_key_id,
             package_signature=canonical_payload_hash,  # Backward compatibility
             substrate_truth_level=substrate_truth_level,
         )
