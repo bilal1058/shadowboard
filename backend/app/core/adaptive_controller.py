@@ -55,6 +55,7 @@ class AdaptiveScanController:
         scan_id: int = 0,
         target_id: int = 0,
         client: Optional[httpx.AsyncClient] = None,
+        mitigation_enabled: bool = False,
     ):
         self.target_base_url = target_base_url
         self.scan_mode = scan_mode
@@ -62,7 +63,9 @@ class AdaptiveScanController:
         self.scan_id = scan_id
         self.target_id = target_id
         self.client = client
+        self.mitigation_enabled = mitigation_enabled
         self.fsm = FSMStanceClassifier()
+
         self.engines = {
             "injection": InjectionEngine(),
             "leakage": LeakageEngine(),
@@ -239,32 +242,41 @@ class AdaptiveScanController:
         target_response_text = ""
         execution_events = []
 
+        headers = {
+            "x-customer-id": "1001",
+            "x-session-id": session.session_id,
+            "x-mitigation-enabled": "true" if self.mitigation_enabled else "false",
+        }
+
         try:
+            payload = {
+                "messages": [{"role": "user", "content": prompt_text}],
+                "prompt": prompt_text,
+                "session_user_id": "1001",
+            }
             if self.client:
                 resp = await self.client.post(
                     f"{self.target_base_url}/chat",
-                    json={
-                        "messages": [{"role": "user", "content": prompt_text}],
-                    },
-                    headers={"x-customer-id": "1001"},
+                    json=payload,
+                    headers=headers,
                 )
             else:
                 async with httpx.AsyncClient(timeout=15.0) as client:
                     resp = await client.post(
                         f"{self.target_base_url}/chat",
-                        json={
-                            "messages": [{"role": "user", "content": prompt_text}],
-                        },
-                        headers={"x-customer-id": "1001"},
+                        json=payload,
+                        headers=headers,
                     )
             if resp.status_code == 200:
                 body = resp.json()
-                target_response_text = body.get("response_text", "")
+                target_response_text = body.get("response_text", "") or body.get("response", "")
 
                 # ONLY extract events for INSTRUMENTED mode
                 if self.scan_mode == "INSTRUMENTED":
                     trace = body.get("execution_trace", {})
-                    raw_events = trace.get("events", [])
+                    raw_events = trace.get("events", []) if isinstance(trace, dict) else []
+                    if not raw_events:
+                        raw_events = body.get("execution_events", [])
                     # Validate each event has required structure
                     for ev in raw_events:
                         if (
@@ -282,6 +294,7 @@ class AdaptiveScanController:
             target_response_text = f"Connection error: {str(err)}"
 
         return target_response_text, execution_events
+
 
     @staticmethod
     def _error_result(message: str) -> Dict[str, Any]:

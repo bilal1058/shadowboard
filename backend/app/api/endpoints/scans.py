@@ -165,14 +165,15 @@ async def run_scan_task(scan_id: int, target_id: int, scan_mode: str, mitigation
 
             policy_contract = PolicyContract(**policy_data)
 
-            # 5. Create controller with target capabilities and provenance
             controller = AdaptiveScanController(
                 target_base_url=base_url,
                 scan_mode=scan_mode,
                 target_capabilities=capabilities,
                 scan_id=scan_id,
                 target_id=target_id,
+                mitigation_enabled=mitigation_enabled,
             )
+
 
             rules = policy_contract.policies
             applicable_rules = [r for r in rules if policy_is_applicable(r, capabilities)[0]]

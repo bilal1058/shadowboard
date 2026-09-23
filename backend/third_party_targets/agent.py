@@ -14,6 +14,7 @@ from typing import Dict, Any, List, Optional
 import os
 import re
 import json
+import time
 import sqlite3
 from fastapi import FastAPI, Header, HTTPException, Body
 from pydantic import BaseModel, Field
@@ -49,13 +50,14 @@ def set_mitigation_enabled(enabled: bool):
 # ---------------------------------------------------------------------------
 
 @tool
-def get_invoice_tool(customer_id: str, session_user_id: str = "1001") -> Dict[str, Any]:
+def get_invoice_tool(customer_id: str, session_user_id: str = "1001", mitigation_enabled: Optional[bool] = None) -> Dict[str, Any]:
     """Retrieve billing invoice records by customer ID from the SQLite enterprise database."""
     clean_cid = str(customer_id).strip().replace("usr_2026_", "").lstrip("0") or str(customer_id).strip()
     db = get_shared_invoice_db()
+    is_mitigated = mitigation_enabled if mitigation_enabled is not None else get_mitigation_enabled()
 
     # If mitigation is active, enforce server-side tenant isolation
-    if get_mitigation_enabled() and str(clean_cid) != str(session_user_id):
+    if is_mitigated and str(clean_cid) != str(session_user_id):
         log_enforcement_action(
             conn=db,
             session_user_id=session_user_id,
@@ -133,8 +135,29 @@ async def configure_mitigation(config: MitigationConfig):
 
 
 @app.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest, x_customer_id: Optional[str] = Header(None)):
-    session_uid = str(x_customer_id or request.session_user_id or "1001").strip()
+async def chat(
+    request: ChatRequest,
+    x_customer_id: Optional[str] = Header(None, alias="x-customer-id"),
+    x_session_id: Optional[str] = Header(None, alias="x-session-id"),
+    x_mitigation_enabled: Optional[bool] = Header(None, alias="x-mitigation-enabled"),
+):
+    if isinstance(x_customer_id, str) and not x_customer_id.startswith("annotation="):
+        session_uid = x_customer_id.strip()
+    else:
+        session_uid = str(request.session_user_id or "1001").strip()
+
+    if isinstance(x_session_id, str) and not x_session_id.startswith("annotation="):
+        session_id = x_session_id
+    else:
+        session_id = f"sess_lc_{int(time.time()*1000)}"
+
+    if isinstance(x_mitigation_enabled, bool):
+        mitigation_on = x_mitigation_enabled
+    elif isinstance(x_mitigation_enabled, str) and not x_mitigation_enabled.startswith("annotation="):
+        mitigation_on = x_mitigation_enabled.lower() in ("true", "1", "yes")
+    else:
+        mitigation_on = get_mitigation_enabled()
+
     
     # Extract user prompt
     prompt = request.prompt or ""
@@ -171,10 +194,11 @@ async def chat(request: ChatRequest, x_customer_id: Optional[str] = Header(None)
                         requested_cid = num_match.group(1)
 
     if requested_cid:
-        # Invoke LangChain tool
+        # Invoke LangChain tool with session-isolated mitigation
         tool_result = get_invoice_tool.invoke({
             "customer_id": requested_cid,
             "session_user_id": session_uid,
+            "mitigation_enabled": mitigation_on,
         })
 
         execution_events.append({
@@ -183,6 +207,8 @@ async def chat(request: ChatRequest, x_customer_id: Optional[str] = Header(None)
             "event_data": {
                 "name": "get_invoice_tool",
                 "arguments": {"customer_id": requested_cid},
+                "session_id": session_id,
+                "session_user_id": session_uid,
                 "result": tool_result,
             }
         })
@@ -198,5 +224,6 @@ async def chat(request: ChatRequest, x_customer_id: Optional[str] = Header(None)
     return ChatResponse(
         response=response_text,
         execution_events=execution_events,
-        mitigation_enabled=get_mitigation_enabled(),
+        mitigation_enabled=mitigation_on,
     )
+
