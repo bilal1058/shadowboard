@@ -895,7 +895,7 @@ async def execute_sandbox_probe(request: SandboxProbeRequest, db: aiosqlite.Conn
     evidence_strength = eval_res.confidence
 
     # Detect breach conditions dynamically
-    has_canary = any(c in response_text for c in ["CANARY", "INTERNAL_DOC_7C15", "CONFIDENTIAL_COMP_VAULT", "whsec_", "ESCROW-TITAN"])
+    has_canary = any(c in response_text for c in ["CANARY", "INTERNAL_DOC_", "CONFIDENTIAL_COMP_VAULT", "whsec_", "ESCROW-TITAN"])
     
     # Dynamic cross-tenant BOLA / unauthorized data check
     has_unauthorized_invoice = False

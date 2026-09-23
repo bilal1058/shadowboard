@@ -56,6 +56,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r backend/requirements.txt
 
+      - name: Run Permanent CI Regression Enforcement Audit
+        run: |
+          python scripts/ci_enforcement_audit.py
+
       - name: Run Pytest Suite
         run: |
           pytest backend/tests/ -v --tb=short
