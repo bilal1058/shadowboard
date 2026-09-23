@@ -68,7 +68,7 @@
 | **3** | Detection Quality & Refusal / Stance Boundaries | **GREEN / COMPLETED** | `pytest backend/tests -v` | 119 passed, 1 skipped, 0 failed in 9.61s (16/16 Phase 3 tests passed) | `d547e68` |
 | **4** | Real Evidence Cryptography & Key Registry | **GREEN / COMPLETED** | `pytest backend/tests` | 136 passed, 1 skipped, 0 failed in 6.93s (17/17 Phase 4 tests passed) | `4a098c0` |
 | **5** | Honest Targets & Session-Isolated Mitigation | **GREEN / COMPLETED** | `pytest backend/tests -v` | 146 passed, 1 skipped, 0 failed in 7.66s (10/10 Phase 5 tests passed) | `4426e4b` |
-| **6** | Statistical & Documentation Honesty | Pending | TBD | TBD | Pending |
+| **6** | Statistical & Documentation Honesty | **GREEN / COMPLETED** | `pytest backend/tests -v` | 154 passed, 1 skipped, 0 failed in 11.20s (8/8 Phase 6 tests passed) | `ab5b308` |
 | **7** | Permanent CI Regression Enforcement Suite | Pending | TBD | TBD | Pending |
 | **8** | (Optional) Out-of-Process Observation Sidecar | Pending | TBD | TBD | Pending |
 
@@ -244,3 +244,45 @@
     - `test_stateful_memory_mitigation_blocks_escalation`: verified memory-driven privilege escalation is rejected when mitigated.
     - `test_adaptive_controller_session_headers_transmitted`: verified adaptive controller transmits session headers.
   - All 10 tests pass. Full test suite: **146 passed, 1 skipped, 0 failed in 7.66s**.
+
+---
+
+## 10. Phase 6 Detailed Execution Log
+
+- [x] **6.1 README Documentation Honesty & Claim Purification**:
+  - Removed all unsupported claims ("100% precision, 100% recall" as a general platform capability, "compliant with OWASP/ATLAS/NIST", unverified Jira/Slack production webhooks, fake Chroma embeddings).
+  - Explicitly marked telemetry trust levels: L0 (Black-Box Text) and L1 (Target Instrumented Traces) as "Implemented"; L2 (Proxy-Observed Sidecar) and L3 (Hardware Attested Sandbox) as "Roadmap (Phase 8)".
+  - Honestly labeled RAG architecture as "Local TF-IDF Vector RAG Index (Cosine Similarity)" rather than Chroma.
+  - Linked all empirical figures to committed JSON artifacts under `backend/app/bench/results/` with two-sided 95% Wilson score confidence intervals.
+  - Updated test badge to 154 passed.
+- [x] **6.2 Framework & Compliance Mapping Artifact**:
+  - Created `docs/COMPLIANCE_MAPPING.md` providing an exhaustive per-control technical crosswalk.
+  - Mapped to OWASP Top 10 for LLM Applications (2025) (LLM01, LLM02, LLM06, LLM07, LLM08, LLM10).
+  - Mapped to MITRE ATLAS (AML.T0054, AML.T0051, AML.T0057, AML.T0053, AML.T0040).
+  - Mapped to NIST AI RMF 1.0 (GOVERN 1.2, MAP 1.1, MEASURE 2.6, MEASURE 2.7, MANAGE 2.4).
+  - Explicitly documents implementation components, exact code and pytest evidence paths, boundaries, and status ("MAPPED & TESTED").
+- [x] **6.3 Open-Source Baseline Comparison (`BASELINES.md`)**:
+  - Created `BASELINES.md` comparing ShadowBoard against Garak (v0.16.0) and PyRIT (v0.4.0+).
+  - Verified Garak installs cleanly via PyPI in standard Python 3.10+ environments.
+  - Documented head-to-head empirical comparison across identical targets (Meridian Target A/B) and identical probe categories (Prompt Extraction, Tool-level BOLA, RAG Confidential Retrieval, Benign Refusals).
+  - Honestly documented where Garak/PyRIT excels (broad static linguistic jailbreaks, ciphers, multi-turn fuzzing) vs where ShadowBoard excels (execution-aware trace auditing, independent oracle, Merkle tree evidence, CI regression gating).
+  - Adhered strictly to the principle of "no manufactured superiority."
+- [x] **6.4 Calibrated Benchmark Runner & Artifact Persistence**:
+  - Created `backend/app/bench/wilson.py` implementing calibrated two-sided 95% Wilson score confidence intervals with robust edge-case handling ($N=0$, clamping, symmetry).
+  - Created `backend/app/bench/runner.py` standardizing benchmark execution, config hashing (SHA-256 fingerprint of probe definitions), git commit SHA recording, latency profiling, and JSON artifact persistence.
+  - Created and committed benchmark artifacts under `backend/app/bench/results/`:
+    - `benchmark_run_deterministic_vulnerable.json` (600 probes, unmitigated)
+    - `benchmark_run_deterministic_mitigated.json` (600 probes, mitigated)
+    - `benchmark_run_live_groq_qwen27b.json` (100 live Groq model turns with full Wilson intervals)
+  - Created `backend/app/bench/README.md` documenting dependencies, environment variables, exact CLI commands, seed, and schema 2.0.0 specifications.
+- [x] **6.5 Phase 6 Dedicated Test Suite**:
+  - Created `backend/tests/test_phase6_statistical_honesty.py` with 8 tests:
+    - `test_wilson_score_interval_known_values`: validated 95% Wilson bounds against statistical reference values.
+    - `test_wilson_score_interval_edge_cases`: validated zero trials, clamping, and symmetry.
+    - `test_committed_benchmark_artifacts_exist_and_validate_schema`: validated all committed artifacts adhere to schema 2.0.0 and satisfy $TP + TN + FP + FN == N$.
+    - `test_readme_documentation_honesty_and_banned_claims`: asserted zero banned marketing phrases in README.md.
+    - `test_framework_mapping_artifact_integrity`: verified completeness of `docs/COMPLIANCE_MAPPING.md`.
+    - `test_baselines_documentation_integrity`: verified completeness of `BASELINES.md`.
+    - `test_benchmark_readme_documentation_integrity`: verified completeness of `backend/app/bench/README.md`.
+    - `test_reproducible_benchmark_runner_execution`: validated mini benchmark run generating dynamic config hash and Wilson CIs.
+  - All 8 tests pass. Full test suite: **154 passed, 1 skipped, 0 failed in 11.20s**.
