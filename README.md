@@ -5,11 +5,11 @@
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-009688.svg)](https://fastapi.tiangolo.com)
-[![Tests Passing](https://img.shields.io/badge/tests-96%20passed-success.svg)](backend/tests/)
+[![Tests Passing](https://img.shields.io/badge/tests-146%20passed-success.svg)](backend/tests/)
 [![Cryptography](https://img.shields.io/badge/Ed25519-Signed-blueviolet.svg)](backend/app/evidence/)
-[![OWASP LLM Top 10](https://img.shields.io/badge/OWASP-LLM%20Top%2010%20(2025)-orange.svg)](https://owasp.org/www-project-top-10-for-large-language-model-applications/)
-[![MITRE ATLAS](https://img.shields.io/badge/MITRE-ATLAS%20Mapped-red.svg)](https://atlas.mitre.org/)
-[![NIST AI RMF](https://img.shields.io/badge/NIST-AI%20RMF%201.0-blue.svg)](https://www.nist.gov/itl/ai-risk-management-framework)
+[![OWASP LLM Top 10](https://img.shields.io/badge/OWASP-LLM%20Top%2010%20(2025)-orange.svg)](docs/COMPLIANCE_MAPPING.md)
+[![MITRE ATLAS](https://img.shields.io/badge/MITRE-ATLAS%20Mapped-red.svg)](docs/COMPLIANCE_MAPPING.md)
+[![NIST AI RMF](https://img.shields.io/badge/NIST-AI%20RMF%201.0-blue.svg)](docs/COMPLIANCE_MAPPING.md)
 
 ---
 
@@ -41,8 +41,8 @@ ShadowBoard introduces **execution-aware assurance** across seven runtime dimens
                   ┌─────────────────────────────────────────┐
                   │        Target Application Substrate     │
                   │  * Live Groq LLM (Qwen 27B) Tool Agent   │
-                  │  * Enterprise In-Memory Database (SQL)  │
-                  │  * Vector RAG Store (Chroma Embeddings) │
+                  │  * Enterprise Database (SQLite Substrate)│
+                  │  * Local TF-IDF Vector RAG Index (Cosine)│
                   │  * Observed Substrate Ground Truth Log  │
                   └───────────────────┬─────────────────────┘
                                       │ Execution Trace + Data
@@ -66,7 +66,7 @@ ShadowBoard introduces **execution-aware assurance** across seven runtime dimens
 │ Independently Verifiable Proof│               │     CI/CD Ecosystem Gate      │
 │  * SHA-256 Linear Merkle Chain│               │  * Pre-merge CLI Gate Runner  │
 │  * Asymmetric Ed25519 Signature│              │  * OASIS SARIF 2.1.0 Artifact │
-│  * Standalone Offline Verifier │              │  * JUnit XML & Slack Alerts   │
+│  * Standalone Offline Verifier │              │  * Structured Audit Payloads  │
 └───────────────────────────────┘               └───────────────────────────────┘
 ```
 
@@ -76,12 +76,12 @@ ShadowBoard introduces **execution-aware assurance** across seven runtime dimens
 
 To maintain scientific integrity, ShadowBoard establishes an explicit 4-tier telemetry trust model:
 
-| Level | Substrate Type | Telemetry Source | Verification Guarantee |
-| :--- | :--- | :--- | :--- |
-| **L0** | `BLACK_BOX` | Completion text only | Heuristic string matching; zero visibility into internal tool calls or database state. |
-| **L1** | `TARGET_INSTRUMENTED` | Target application trace events | High precision on tool arguments and DB queries; requires cooperative target instrumentation. |
-| **L2** | `PROXY_OBSERVED` | Out-of-band network proxy / sidecar | Network egress & external API calls captured independently of target cooperation. |
-| **L3** | `ATTESTED_EXECUTION` | Hardware enclave / kernel sandbox | Cryptographically verified execution integrity; tamper-proof execution substrate. |
+| Level | Substrate Type | Telemetry Source | Verification Guarantee | Status |
+| :--- | :--- | :--- | :--- | :---: |
+| **L0** | `BLACK_BOX` | Completion text only | Heuristic string matching; zero visibility into internal tool calls or database state. | **Implemented** |
+| **L1** | `TARGET_INSTRUMENTED` | Target application trace events | High precision on tool arguments and DB queries; requires cooperative target instrumentation. | **Implemented** |
+| **L2** | `PROXY_OBSERVED` | Out-of-band network proxy / sidecar | Network egress & external API calls captured independently of target cooperation. | *Roadmap (Phase 8)* |
+| **L3** | `ATTESTED_EXECUTION` | Hardware enclave / kernel sandbox | Cryptographically verified execution integrity; tamper-proof execution substrate. | *Roadmap (Phase 8)* |
 
 ---
 
@@ -105,8 +105,11 @@ ShadowBoard evidence packages separate **Data Integrity** from **Signer Authenti
 ## 🧪 Systematic Validation & Mutation Testing
 
 ### 1. Controlled Substrate Self-Test
-> **Controlled Substrate Self-Test Result:** 600/600 probes correctly classified across deterministic instrumented substrates under defined benchmark conditions.  
-> *Important Methodology Note*: These figures demonstrate that ShadowBoard correctly observes and enforces the specific security contracts it was engineered to detect within this controlled testbed. They are an internal regression self-test, **not** an empirical estimate of general-world attack detection against unconstrained production systems.
+> **Controlled Substrate Self-Test Result:** 600/600 probes correctly classified across deterministic instrumented substrates under defined benchmark conditions. Full evaluation data is committed in:
+> - [`backend/app/bench/results/benchmark_run_deterministic_vulnerable.json`](backend/app/bench/results/benchmark_run_deterministic_vulnerable.json) (ASR: 100.0% [99.2%, 100.0%])
+> - [`backend/app/bench/results/benchmark_run_deterministic_mitigated.json`](backend/app/bench/results/benchmark_run_deterministic_mitigated.json) (ASR: 0.0% [0.0%, 0.8%], FPR: 0.0% [0.0%, 0.7%])
+> 
+> *Important Methodology Note*: These figures demonstrate that ShadowBoard correctly observes and enforces the specific security contracts it was engineered to detect within this controlled testbed. They are an internal regression self-test, **not** an empirical claim of 100% detection against unconstrained, novel real-world attacks. Full runner instructions and schema specifications are in [backend/app/bench/README.md](backend/app/bench/README.md).
 
 ### 2. Independent Oracle & Decoupled Ground Truth
 Ground truth is strictly derived by an `IndependentOracle` from:
@@ -163,8 +166,8 @@ We evaluated ShadowBoard against a live LLM tool agent (`RealLLMToolAgent`) powe
 | **Median Latency** | 3,307.0 ms | — |
 | **p95 Latency** | 6,011.2 ms | — |
 
-*Key Empirical Finding*: In unmitigated mode, the live model refused 10 out of 40 adversarial probes upfront without calling the tool (a 25% intrinsic refusal rate). ShadowBoard correctly recognized these safe text refusals without triggering false positives, while capturing all 30 actual tool-level BOLA breaches where the model executed `get_invoice(customer_id="1042")`.
-
+*Key Empirical Finding*: In unmitigated mode, the live model refused 10 out of 40 adversarial probes upfront without calling the tool (a 25% intrinsic refusal rate). ShadowBoard correctly recognized these safe text refusals without triggering false positives, while capturing all 30 actual tool-level BOLA breaches where the model executed `get_invoice(customer_id="1042")`.  
+*Full evaluation data is committed in [`backend/app/bench/results/benchmark_run_live_groq_qwen27b.json`](backend/app/bench/results/benchmark_run_live_groq_qwen27b.json).*
 
 ---
 
@@ -228,7 +231,7 @@ pip install -r backend/requirements.txt
 ```bash
 pytest backend/tests/ -v
 ```
-*Executes all 96 automated tests across 21 test suites (unit, integration, real LLM, Ed25519 cryptographic proofs, independent oracle, and evaluator mutation tests).*
+*Executes all 146+ automated tests across 22 test suites (unit, integration, real LLM, Ed25519 cryptographic proofs, independent oracle, honest target sessions, and evaluator mutation tests).*
 
 ### 3. Launch Web Console
 ```bash
@@ -240,4 +243,6 @@ Open **`http://127.0.0.1:8000/`** to access the ShadowBoard Console (Policy-as-C
 
 ## 👥 Engineering & Research Context
 Designed and engineered as a high-assurance AI security evaluation platform.  
-Compliant with **OWASP Top 10 for LLM Applications (2025)**, **MITRE ATLAS**, and **NIST AI RMF 1.0**.
+Mapped to **OWASP Top 10 for LLM Applications (2025)**, **MITRE ATLAS**, and **NIST AI RMF 1.0** with executable per-control evidence in [docs/COMPLIANCE_MAPPING.md](docs/COMPLIANCE_MAPPING.md).  
+Comparative evaluation against open-source red-teaming scanners is documented in [BASELINES.md](BASELINES.md).  
+Full benchmark methodology and runner instructions are in [backend/app/bench/README.md](backend/app/bench/README.md).
