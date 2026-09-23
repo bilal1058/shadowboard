@@ -69,7 +69,7 @@
 | **4** | Real Evidence Cryptography & Key Registry | **GREEN / COMPLETED** | `pytest backend/tests` | 136 passed, 1 skipped, 0 failed in 6.93s (17/17 Phase 4 tests passed) | `4a098c0` |
 | **5** | Honest Targets & Session-Isolated Mitigation | **GREEN / COMPLETED** | `pytest backend/tests -v` | 146 passed, 1 skipped, 0 failed in 7.66s (10/10 Phase 5 tests passed) | `4426e4b` |
 | **6** | Statistical & Documentation Honesty | **GREEN / COMPLETED** | `pytest backend/tests -v` | 154 passed, 1 skipped, 0 failed in 11.20s (8/8 Phase 6 tests passed) | `ab5b308` |
-| **7** | Permanent CI Regression Enforcement Suite | Pending | TBD | TBD | Pending |
+| **7** | Permanent CI Regression Enforcement Suite | **GREEN / COMPLETED** | `pytest backend/tests -v` & `python scripts/ci_enforcement_audit.py` | 177 passed, 1 skipped, 0 failed in 8.67s; 23/23 CI invariant tests passed; Standalone audit passed (7/7 checks) | `926a538` |
 | **8** | (Optional) Out-of-Process Observation Sidecar | Pending | TBD | TBD | Pending |
 
 ---
@@ -286,3 +286,56 @@
     - `test_benchmark_readme_documentation_integrity`: verified completeness of `backend/app/bench/README.md`.
     - `test_reproducible_benchmark_runner_execution`: validated mini benchmark run generating dynamic config hash and Wilson CIs.
   - All 8 tests pass. Full test suite: **154 passed, 1 skipped, 0 failed in 11.20s**.
+
+---
+
+## 11. Phase 7 Detailed Execution Log
+
+- [x] **7.1 Banned Hardcoded Values Purged**:
+  - Swept and purged hardcoded benchmark strings (`1042`, `$12,850`, `INTERNAL_DOC_7C15`, and specific tool name `get_invoice`) from `backend/app/verifier/engine.py`, `backend/app/verifier/execution_evaluator.py`, and `backend/app/api/endpoints/scans.py`.
+  - Generalized tenant parameter detection in `PolicyAssertionEngine.audit_trace` across standard tenant keys (`customer_id`, `account_id`, `user_id`, `tenant_id`, `client_id`).
+  - Generalized financial amount detection in `ExecutionAwareEvaluator.audit_network_observation` via regex currency pattern matching rather than checking literal float strings.
+  - Generalized internal document detection via dynamic prefix patterns (`INTERNAL_DOC_`) rather than hardcoded document numbers.
+  - Replaced hardcoded fallback tool name `get_invoice` in `ExecutionAwareEvaluator` with `standard_query`.
+  - Verified 0 banned values across `backend/app/verifier/`, `backend/app/api/endpoints/scans.py`, and `backend/app/core/`.
+- [x] **7.2 Standalone Audit Tool (`scripts/ci_enforcement_audit.py`)**:
+  - Developed standalone CI audit script executing 7 core checks independently of pytest:
+    1. Git tracked file hygiene (verifies no tracked `.env`, `.pem`, `.key`, `.db`, `.sqlite`, build artifacts)
+    2. Secret pattern scanning (verifies no tracked live API key formats, private key headers)
+    3. Banned benchmark value sweep (scans production verifiers, API routers, and core modules)
+    4. Alembic absence hygiene (ensures no orphaned empty alembic directories exist)
+    5. Frontend entrypoint integrity (checks `App.tsx` imports, `index.html` structure)
+    6. Single verdict engine routing (validates `master_verifier` as sole PolicyAssertionEngine authority)
+    7. Production Dockerfile configuration (validates non-root user, proper COPY order, and `/api/health` healthcheck endpoint)
+- [x] **7.3 Permanent CI Regression Enforcement Test Suite (`backend/tests/test_phase7_permanent_ci_suite.py`)**:
+  - Implemented comprehensive automated test suite for all 23 audit invariants:
+    - Invariant 1: Clean-install dependencies hygiene
+    - Invariant 2: Secret hygiene & pattern sweep
+    - Invariant 3: Zero hardcoded benchmark values in production engines & verifiers
+    - Invariant 4: Oracle independence & observation tampering invariance
+    - Invariant 5: Phase 3 adversarial refusal & leak boundaries
+    - Invariant 6: Blocked tool calls can never yield `CONFIRMED` breach
+    - Invariant 7: Central admin authentication fail-closed enforcement
+    - Invariant 8: Strict CORS wildcard ban
+    - Invariant 9: SSRF protection across loopback, RFC1918, link-local, cloud metadata
+    - Invariant 10: Target URL authorization & safe redirects
+    - Invariant 11: Per-session mitigation isolation
+    - Invariant 12: Concurrent scan state isolation
+    - Invariant 13: SSE subscriber queue cleanup on scan termination
+    - Invariant 14: Scan concurrency cap (max 3 concurrent)
+    - Invariant 15: Unsigned evidence packages fail cryptographic verification
+    - Invariant 16: Unregistered key_id fails PKI verification
+    - Invariant 17: Evidence tampering fails Merkle tree & Ed25519 verification
+    - Invariant 18: PolicyAssertionEngine is the sole verdict engine authority
+    - Invariant 19: Frontend build integrity & no recursive imports
+    - Invariant 20: Production Dockerfile multi-stage build & non-root user
+    - Invariant 21: `/api/health` healthcheck endpoint responsiveness
+    - Invariant 22: No generated artifacts or databases tracked in Git
+    - Invariant 23: Complete absence of orphaned Alembic directories
+- [x] **7.4 CI Workflow Integration (`.github/workflows/shadowboard-assurance.yml`)**:
+  - Added `Run Permanent CI Regression Enforcement Audit` step (`python scripts/ci_enforcement_audit.py`) to the automated CI pipeline before pytest.
+- [x] **7.5 Full Suite Verification**:
+  - `python scripts/ci_enforcement_audit.py`: 7/7 checks PASS.
+  - `pytest backend/tests/test_phase7_permanent_ci_suite.py`: 23/23 tests PASS.
+  - Full suite `pytest backend/tests -v`: **177 passed, 1 skipped, 0 failed in 8.67s**.
+
