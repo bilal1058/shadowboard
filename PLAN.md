@@ -67,7 +67,7 @@
 | **2** | Remove Hardcoded Demo Values from Paths | **GREEN / COMPLETED** | `pytest backend/tests -v` | 103 passed, 1 skipped, 0 failed in 6.99s (7/7 Phase 2 tests passed) | `51da388` |
 | **3** | Detection Quality & Refusal / Stance Boundaries | **GREEN / COMPLETED** | `pytest backend/tests -v` | 119 passed, 1 skipped, 0 failed in 9.61s (16/16 Phase 3 tests passed) | `d547e68` |
 | **4** | Real Evidence Cryptography & Key Registry | **GREEN / COMPLETED** | `pytest backend/tests` | 136 passed, 1 skipped, 0 failed in 6.93s (17/17 Phase 4 tests passed) | `4a098c0` |
-| **5** | Honest Targets & Session-Isolated Mitigation | Pending | TBD | TBD | Pending |
+| **5** | Honest Targets & Session-Isolated Mitigation | **GREEN / COMPLETED** | `pytest backend/tests -v` | 146 passed, 1 skipped, 0 failed in 7.66s (10/10 Phase 5 tests passed) | `4426e4b` |
 | **6** | Statistical & Documentation Honesty | Pending | TBD | TBD | Pending |
 | **7** | Permanent CI Regression Enforcement Suite | Pending | TBD | TBD | Pending |
 | **8** | (Optional) Out-of-Process Observation Sidecar | Pending | TBD | TBD | Pending |
@@ -205,6 +205,42 @@
   - Created `backend/tests/test_phase4_cryptography.py` with 17 tests covering: Merkle tree construction, multi-event inclusion proofs, event order sensitivity, key registry initialization, key rotation, key revocation, keyring export/import, PEM file loading, evidence package signing & standalone verification, trace tampering detection, manifest tampering detection, response text tampering detection, signature bit-flip detection, revoked key rejection, and all evidence key API endpoints.
   - All 17 tests pass. Full test suite: **136 passed, 1 skipped, 0 failed in 6.93s**.
 
+---
 
+## 9. Phase 5 Detailed Execution Log
 
-
+- [x] **5.1 Target A Session Isolation & Defense Telemetry**:
+  - Replaced shared mutable `_mitigation_enabled` global dependency with per-session evaluation via `x-session-id` and `x-mitigation-enabled` HTTP headers.
+  - Implemented real input defense firewall: when mitigation is active, detected prompt injections append `input_defense_triggered` event with `session_id`, log structured refusal, and return sanitized response.
+  - Implemented real output canary scrubber: when mitigation is active, detected canary leaks append `output_filter_triggered` event with `session_id` and mask tokens.
+  - Handled FastAPI dependency fallback so direct Python function calls without HTTP request headers preserve backwards compatibility.
+- [x] **5.2 Target B Session Isolation, Real BOLA Defense & RBAC Clearance**:
+  - Replaced shared mutable `_mitigation_enabled` with per-session evaluation via `x-session-id`, `x-mitigation-enabled`, `x-user-role`, and `x-customer-id` HTTP headers.
+  - Real SQLite BOLA tool rejection: when mitigation is active and a customer queries cross-tenant invoices, target logs `BOLA_VIOLATION` to `enforcement_log` SQLite table, logs structured execution events, and returns strict 403-style refusal.
+  - Honest unmitigated breach: when mitigation is disabled, target queries `fetch_invoice_records` and honestly leaks cross-tenant invoices without synthetic evasion.
+  - Dynamic RBAC clearance filtering: RAG documents categorized as `RESTRICTED_CONFIDENTIAL` are filtered unless the authenticated `user_role` has clearance (e.g. `admin`, `auditor`, `compliance`).
+- [x] **5.3 Third-Party LangChain Target Isolation**:
+  - Added missing `import time` in `backend/third_party_targets/agent.py`.
+  - Updated `/chat` endpoint to parse `x-session-id` and `x-mitigation-enabled` headers.
+  - Passed `mitigation_enabled` parameter to `get_invoice_tool` to enforce real tenant validation per-session without mutating global state.
+- [x] **5.4 Conversational Memory Boundary Isolation**:
+  - Updated `StatefulMemoryAgent.execute_turn` in `backend/app/bench/targets.py` to accept and key conversation memory strictly by `session_id` instead of a shared global user ID.
+  - Enforced memory privilege escalation block: under mitigation (`mitigation_enabled=True`), memory writes attempting role escalation (e.g., `role: admin`, `elevate privileges`) are blocked, preventing multi-turn prompt injection privilege escalation across sessions.
+- [x] **5.5 Adaptive Scan Controller Session & Mitigation Propagation**:
+  - Updated `AdaptiveScanController` in `backend/app/core/adaptive_controller.py` to accept `mitigation_enabled` parameter.
+  - In `_interact_with_target`, propagates `x-session-id`, `x-mitigation-enabled`, and `x-customer-id` headers to downstream target HTTP requests.
+  - Updated response event parsing to support both `response_text` / `response` and `execution_trace.events` / `execution_events`.
+  - Updated `backend/app/api/endpoints/scans.py` to pass `request.mitigation_enabled` to `AdaptiveScanController`.
+- [x] **5.6 Phase 5 Test Suite**:
+  - Created `backend/tests/test_phase5_honest_targets.py` with 10 unit and integration tests:
+    - `test_target_a_isolated_mitigation_header`: verified session-specific mitigation activation via header.
+    - `test_target_a_concurrent_sessions_independence`: verified concurrent session isolation with different mitigation states.
+    - `test_target_b_bola_mitigated_enforcement_log`: verified real SQLite `enforcement_log` recording on blocked BOLA requests.
+    - `test_target_b_bola_unmitigated_breach_honesty`: verified unmitigated cross-tenant invoice leakage against real SQLite records.
+    - `test_target_b_concurrent_sessions_isolated_mitigation`: verified concurrent Target B sessions do not leak mitigation state.
+    - `test_target_b_rbac_clearance_filtering`: verified RBAC clearance role filtering for confidential documents.
+    - `test_langchain_target_session_isolated_mitigation`: verified LangChain tool mitigation is per-session.
+    - `test_stateful_memory_session_boundary_isolation`: verified conversational memory does not leak across session IDs.
+    - `test_stateful_memory_mitigation_blocks_escalation`: verified memory-driven privilege escalation is rejected when mitigated.
+    - `test_adaptive_controller_session_headers_transmitted`: verified adaptive controller transmits session headers.
+  - All 10 tests pass. Full test suite: **146 passed, 1 skipped, 0 failed in 7.66s**.
