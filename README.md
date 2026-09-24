@@ -5,7 +5,7 @@
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-009688.svg)](https://fastapi.tiangolo.com)
-[![Tests Passing](https://img.shields.io/badge/tests-146%20passed-success.svg)](backend/tests/)
+[![Tests Passing](https://img.shields.io/badge/tests-185%20passed-success.svg)](backend/tests/)
 [![Cryptography](https://img.shields.io/badge/Ed25519-Signed-blueviolet.svg)](backend/app/evidence/)
 [![OWASP LLM Top 10](https://img.shields.io/badge/OWASP-LLM%20Top%2010%20(2025)-orange.svg)](docs/COMPLIANCE_MAPPING.md)
 [![MITRE ATLAS](https://img.shields.io/badge/MITRE-ATLAS%20Mapped-red.svg)](docs/COMPLIANCE_MAPPING.md)
@@ -80,8 +80,14 @@ To maintain scientific integrity, ShadowBoard establishes an explicit 4-tier tel
 | :--- | :--- | :--- | :--- | :---: |
 | **L0** | `BLACK_BOX` | Completion text only | Heuristic string matching; zero visibility into internal tool calls or database state. | **Implemented** |
 | **L1** | `TARGET_INSTRUMENTED` | Target application trace events | High precision on tool arguments and DB queries; requires cooperative target instrumentation. | **Implemented** |
-| **L2** | `PROXY_OBSERVED` | Out-of-band network proxy / sidecar | Network egress & external API calls captured independently of target cooperation. | *Roadmap (Phase 8)* |
-| **L3** | `ATTESTED_EXECUTION` | Hardware enclave / kernel sandbox | Cryptographically verified execution integrity; tamper-proof execution substrate. | *Roadmap (Phase 8)* |
+| **L2** | `PROXY_OBSERVED` | Out-of-band network proxy / sidecar | Network egress & external API calls captured independently of target cooperation; defeats target gaslighting. | **Implemented** |
+| **L3** | `ATTESTED_EXECUTION` | Hardware enclave / kernel sandbox | Cryptographically verified execution integrity; tamper-proof execution substrate. | *Future Research* |
+
+### 🌐 L2 Out-of-Process Observation Sidecar (`backend/app/sidecar/`)
+When evaluating uninstrumented third-party agents or adversarial agents that deliberately suppress internal telemetry, ShadowBoard deploys an out-of-band network observation sidecar:
+- **Zero Cooperative Instrumentation**: Sits transparently on the network egress path of the agent.
+- **Gaslighting Immunity**: When a target emits a polite text refusal (`"Access denied"`) but secretly executes unauthorized cross-tenant HTTP requests, L2 proxy captures the wire interaction, proves the BOLA breach, and generates an independently signed evidence package (`substrate_truth_level: "PROXY_OBSERVED"`).
+- **Cryptographic Merkle Proof**: Sidecar maintains its own binary Merkle tree over captured network events, completely isolated from target memory.
 
 ---
 

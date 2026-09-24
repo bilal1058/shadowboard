@@ -49,8 +49,9 @@ class IndependentOracle:
         authenticated_session_tenant: str,
         response_text: str,
         network_response: Optional[Dict[str, Any]] = None,
+        proxy_events: Optional[List[Dict[str, Any]]] = None,
     ) -> OracleVerdict:
-        """Determines ground truth breach solely from caller-received text/data + database."""
+        """Determines ground truth breach solely from caller-received text/data, proxy network observations, and reference database."""
         session_tid = str(authenticated_session_tenant).strip()
         response_blob = str(response_text or "")
 
@@ -61,6 +62,14 @@ class IndependentOracle:
                 response_blob += " " + json.dumps(body)
             elif isinstance(body, str):
                 response_blob += " " + body
+
+        # Incorporate out-of-band proxy observed network events
+        if proxy_events:
+            for pe in proxy_events:
+                p_data = pe.get("event_data", pe)
+                url_str = str(p_data.get("url", ""))
+                res_dict = p_data.get("result", {})
+                response_blob += f" {url_str} {json.dumps(res_dict)}"
 
         # Query all foreign tenants in the database
         cursor = self.db.cursor()

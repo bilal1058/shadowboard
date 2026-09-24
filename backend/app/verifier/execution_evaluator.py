@@ -357,14 +357,14 @@ class ExecutionAwareEvaluator:
                     break
 
         # -------------------------------------------------------------
-        # 2. Tool Calls & Arguments Dimension
+        # 2. Tool Calls & Network Observations Dimension
         # -------------------------------------------------------------
-        tool_events = [e for e in execution_events if e.get("event_type") == "tool_call"]
+        tool_events = [e for e in execution_events if e.get("event_type") in ("tool_call", "proxy_network_call")]
         tool_violations = 0
 
         for ev in tool_events:
             ev_data = ev.get("event_data", {})
-            name = ev_data.get("name", "unknown_tool")
+            name = ev_data.get("name") or ev_data.get("url") or "unknown_tool"
             args = ev_data.get("arguments", {})
             result = ev_data.get("result", {})
             hitl_approved = ev_data.get("human_approval") is True or bool(ev_data.get("approval_token"))
@@ -541,7 +541,8 @@ class ExecutionAwareEvaluator:
         total_violations = len(violations)
         if total_violations > 0:
             overall_verdict = "CONFIRMED"
-            evidence_level = "L1_DETERMINISTIC_EXECUTION_AWARE"
+            has_proxy = any(e.get("source") == "proxy_observed" or e.get("event_type") == "proxy_network_call" for e in execution_events)
+            evidence_level = "L2_PROXY_OBSERVED" if has_proxy else "L1_DETERMINISTIC_EXECUTION_AWARE"
             severity_weights = {"CRITICAL": 1.0, "HIGH": 0.8, "MEDIUM": 0.6, "LOW": 0.4}
             max_sev = max((severity_weights.get(v.get("severity"), 0.5) for v in violations), default=0.5)
             signal_ratio = min(1.0, len(violations) / max(1, len(execution_events)))
