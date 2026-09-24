@@ -373,4 +373,49 @@
     - `test_forward_and_observe_mock_http`: verified HTTP forwarding and observation capture.
   - Full test suite: **185 passed, 1 skipped, 0 failed in 9.86s**.
 
+---
+
+## 13. Post-Phase 8 Architectural Remediation & Code-Level Audit Closure
+
+Following an independent code-level audit of the actual codebase, all identified architectural discrepancies were remediated:
+
+- [x] **13.1 Consolidated Sole Verdict Engine Authority**:
+  - Added `PolicyAssertionEngine.resolve_verdict(has_violations, is_explicit_refusal, is_inconclusive)` in `backend/app/verifier/engine.py` as the **single source of truth** for security verdicts across the entire platform.
+  - Refactored `backend/app/verifier/execution_evaluator.py` to delegate all verdict assignments directly to `master_verifier.resolve_verdict()`; purged all direct `"CONFIRMED"` and `"PASS"` assignments.
+  - Refactored `backend/app/policy_engine/evaluator.py` to route all rule and policy evaluation verdicts through `master_verifier.resolve_verdict()`.
+  - Strengthened `test_invariant_18_exactly_one_verdict_engine` in `backend/tests/test_phase7_permanent_ci_suite.py` to statically and dynamically verify that no module independently mints verdict literals.
+
+- [x] **13.2 Phase 4 Legacy Reference Cleanliness**:
+  - Deleted `_DEFAULT_PRIVATE_KEY` and `_get_default_private_key()` from `backend/app/evidence/bundler.py`.
+  - Zero hardcoded or default private keys remain in the entire codebase.
+
+- [x] **13.3 Phase 2 Residual Hardcoded Demo Values Purged from General Paths**:
+  - `backend/app/verifier/engine.py`: Replaced hardcoded `POL-LEAK-004` check with generic RAG leak rule matching (`rule_type in ("canary_absence", "rag_tenant_isolation")`, `owasp_category`, `resource`).
+  - `backend/app/planner/autonomous_planner.py` & `backend/app/api/endpoints/planner.py`: Replaced hardcoded default tenant `"1042"` with generic `"tenant_target_02"` and user ID with `"user_session_01"`. Replaced hardcoded tool `"get_invoice"` fallback with `"query_tenant_resource"`.
+  - `backend/app/bench/targets.py`: Replaced hardcoded `$12,850.00 if target_cid == "1042"` with dynamic seeded database querying against `fetch_invoice_records(get_shared_invoice_db(), target_cid)` and generalized prompt tenant ID extraction with regex.
+  - `backend/app/internal_rag/app.py`: Removed hardcoded `"1042"` tenant fallback on audit/compliance queries.
+  - Strengthened `test_invariant_3_no_hardcoded_benchmark_values` to verify `backend/app/planner` and `planner.py`.
+
+- [x] **13.4 Oracle Trust Boundary Clarification**:
+  - Enforced strict trust boundary in `backend/app/bench/oracle.py` (`evaluate_probe_outcome`):
+    - Untrusted target telemetry (L1) cannot unilaterally declare an oracle ground-truth breach.
+    - Ground truth is strictly established via caller-observed response matching against the seeded SQLite reference database or authoritative L2 proxy observations (`truth_level == "L2_PROXY_OBSERVED"`).
+
+- [x] **13.5 Real Multi-Process Subprocess End-to-End Test (`test_phase8_real_subprocess_e2e`)**:
+  - Added dedicated out-of-process integration test in `backend/tests/test_phase8_observation_sidecar.py`:
+    - Spawns real vulnerable target process on an ephemeral localhost port.
+    - Spawns real sidecar server process via `uvicorn app.sidecar.server:app` on a separate ephemeral port.
+    - Dispatches attack traffic through the sidecar `/proxy/observe` proxy endpoint.
+    - Captures request/response, redacts credentials, and exports an Ed25519-signed L2 evidence package.
+    - Evaluates Independent Oracle verdict on authoritative L2 proxy evidence.
+    - **Terminates and kills the target subprocess** (simulating target crash, evasion, tampering).
+    - Verifies that post-death cryptographic evidence and attestation verification remain **100% valid**.
+
+- [x] **13.6 CI & Test Suite Verification**:
+  - `python scripts/ci_enforcement_audit.py`: **7/7 PASS**.
+  - `pytest backend/tests/test_phase8_observation_sidecar.py -v`: **9/9 PASS**.
+  - `pytest backend/tests/test_phase7_permanent_ci_suite.py -v`: **23/23 PASS**.
+  - Full suite `pytest backend/tests`: **186 passed, 1 skipped, 0 failed in 9.21s**.
+
+
 
