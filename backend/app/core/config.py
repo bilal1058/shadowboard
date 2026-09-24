@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     API_KEY_BURST: int = Field(default=5, ge=1)
 
     # CORS
-    CORS_ORIGINS: str = Field(default="http://127.0.0.1:8000")
+    CORS_ORIGINS: str = Field(default="http://localhost:3000,http://localhost:8000,http://127.0.0.1:3000,http://127.0.0.1:8000")
     SENTRY_DSN: Optional[str] = None
     SENTRY_ENVIRONMENT: Optional[str] = None
 

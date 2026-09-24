@@ -178,6 +178,12 @@ root_frontend_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "fr
 backend_static_dir = os.path.join(os.path.dirname(__file__), "static")
 frontend_static_dir = root_frontend_dir if os.path.exists(root_frontend_dir) else backend_static_dir
 
+# Mount Vite assets directory (/assets/index-*.js, /assets/index-*.css)
+assets_dir = os.path.join(frontend_static_dir, "assets")
+if os.path.exists(assets_dir):
+    app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+
+# Mount static directory for general static files
 if os.path.exists(frontend_static_dir):
     app.mount("/static", StaticFiles(directory=frontend_static_dir), name="static")
 
@@ -186,14 +192,22 @@ async def favicon():
     svg_icon = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#dc2626"><path d="M12 2L3 7v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-9-5zm0 2.18l7 3.89v4.93c0 4.54-3.14 8.79-7 9.94-3.86-1.15-7-5.4-7-9.94V8.07l7-3.89z"/></svg>"""
     return Response(content=svg_icon, media_type="image/svg+xml")
 
-@app.get("/")
-async def root():
+@app.get("/{full_path:path}", include_in_schema=False)
+async def serve_spa(full_path: str = ""):
+    # If a specific static file exists directly in frontend_static_dir, serve it
+    file_path = os.path.join(frontend_static_dir, full_path)
+    if full_path and os.path.isfile(file_path):
+        return FileResponse(file_path)
+    # SPA catch-all: serve index.html for client-side routing
     index_file = os.path.join(frontend_static_dir, "index.html")
     if os.path.exists(index_file):
         return FileResponse(index_file)
     return HTMLResponse(content="<h1>ShadowBoard Security Engine Active</h1><p>API docs at <a href='/docs'>/docs</a></p>")
 
 if __name__ == "__main__":
+    if not os.getenv("SHADOWBOARD_ADMIN_KEY") and not os.getenv("SHADOWBOARD_API_KEY"):
+        os.environ["SHADOWBOARD_ADMIN_KEY"] = "shadowboard_admin_secret_2026"
+        logger.info("SHADOWBOARD_ADMIN_KEY defaulted to 'shadowboard_admin_secret_2026' for local development")
     import uvicorn
     uvicorn.run(
         "main:app",

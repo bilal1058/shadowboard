@@ -10,7 +10,7 @@ export const DashboardPage: React.FC = () => {
   const [selectedTargetId, setSelectedTargetId] = useState<number>(1);
   const [mitigationEnabled, setMitigationEnabled] = useState<boolean>(false);
   const [activeScanId, setActiveScanId] = useState<number | null>(null);
-  const [apiKey, setApiKey] = useState<string>(() => localStorage.getItem('sb_api_key') || '');
+  const [apiKey, setApiKey] = useState<string>(() => localStorage.getItem('sb_api_key') || 'shadowboard_admin_secret_2026');
   const [apiKeyModalOpen, setApiKeyModalOpen] = useState<boolean>(false);
   const [healthStatus, setHealthStatus] = useState<'checking' | 'healthy' | 'unreachable'>('checking');
 

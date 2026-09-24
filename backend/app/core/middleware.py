@@ -77,6 +77,10 @@ class AdminAuthMiddleware(BaseHTTPMiddleware):
             token = auth_header.strip()
         elif api_key_header:
             token = api_key_header.strip()
+        elif request.query_params.get("api_key"):
+            token = request.query_params.get("api_key", "").strip()
+        elif request.query_params.get("token"):
+            token = request.query_params.get("token", "").strip()
 
         if not token:
             return JSONResponse(
