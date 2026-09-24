@@ -703,11 +703,65 @@ async def get_scan_details(scan_id: int, db: aiosqlite.Connection = Depends(get_
             "attempts": attempts,
         })
 
+    # Fetch target metadata
+    tgt_cursor = await db.execute(
+        "SELECT name, base_url, model_name, target_type, target_mode, capabilities_json FROM targets WHERE id = ?",
+        (row[1],),
+    )
+    tgt_row = await tgt_cursor.fetchone()
+    target_info = {}
+    if tgt_row:
+        try:
+            caps = json.loads(tgt_row[5]) if tgt_row[5] else {}
+        except Exception:
+            caps = {}
+        target_info = {
+            "name": tgt_row[0],
+            "base_url": tgt_row[1],
+            "model_name": tgt_row[2],
+            "target_type": tgt_row[3],
+            "target_mode": tgt_row[4],
+            "capabilities": caps,
+        }
+
+    # Fetch findings with cryptographic evidence
+    f_cursor = await db.execute(
+        "SELECT id, finding_id, owasp_category, taxonomy_version, application_security_class, "
+        "status, attack_outcome, evidence_status, confidence, severity, "
+        "evidence_json, evidence_hash, remediation, created_at "
+        "FROM findings WHERE scan_id = ? ORDER BY id ASC",
+        (scan_id,)
+    )
+    findings = []
+    for f in await f_cursor.fetchall():
+        try:
+            ev_dict = json.loads(f[10]) if f[10] else {}
+        except Exception:
+            ev_dict = {"raw": f[10]}
+        findings.append({
+            "id": f[0],
+            "finding_id": f[1],
+            "owasp_category": f[2],
+            "taxonomy_version": f[3],
+            "application_security_class": f[4],
+            "status": f[5],
+            "attack_outcome": f[6],
+            "evidence_status": f[7],
+            "confidence": f[8],
+            "severity": f[9],
+            "evidence": ev_dict,
+            "evidence_hash": f[11],
+            "remediation": f[12],
+            "created_at": _iso_utc(f[13]) if f[13] else None,
+        })
+
     all_flat_attempts = [att for obj in objectives for att in obj.get("attempts", [])]
 
     return {
         "id": row[0],
         "target_id": row[1],
+        "target_name": target_info.get("name", f"Target #{row[1]}"),
+        "target_info": target_info,
         "status": row[2],
         "scan_mode": row[3],
         "started_at": _iso_utc(row[4]),
@@ -723,6 +777,7 @@ async def get_scan_details(scan_id: int, db: aiosqlite.Connection = Depends(get_
         "errors": row[14],
         "not_applicable": row[15],
         "policy_coverage": row[16],
+        "findings": findings,
         "objectives": objectives,
         "attempts": all_flat_attempts,
     }
@@ -738,6 +793,30 @@ async def stream_scan_events(scan_id: int, db: aiosqlite.Connection = Depends(ge
     current_status = row[0]
     if current_status in ("COMPLETED", "FAILED"):
         async def completed_generator():
+            # Initial status update
+            yield f"data: {json.dumps({'type': 'status_update', 'scan_id': scan_id, 'data': {'status': current_status, 'message': f'Scan execution state: {current_status}. Replaying recorded telemetry.'}})}\n\n"
+            
+            # Replay evaluated attempts as telemetry events
+            att_cur = await db.execute(
+                "SELECT ao.family, ao.policy_rule_id, aa.turn_number, aa.strategy, aa.stance_tag, aa.prompt_text "
+                "FROM attack_attempts aa "
+                "JOIN attack_objectives ao ON aa.objective_id = ao.id "
+                "WHERE ao.scan_id = ? ORDER BY aa.id ASC",
+                (scan_id,)
+            )
+            for att in await att_cur.fetchall():
+                p_text = att[5] or ""
+                snippet = (p_text[:80] + "...") if len(p_text) > 80 else p_text
+                yield f"data: {json.dumps({'type': 'attempt_evaluated', 'scan_id': scan_id, 'data': {'family': att[0], 'rule_id': att[1], 'turn': att[2], 'strategy': att[3], 'stance': att[4], 'snippet': snippet}})}\n\n"
+
+            # Replay recorded findings
+            f_cur = await db.execute(
+                "SELECT finding_id, severity, owasp_category, status FROM findings WHERE scan_id = ? ORDER BY id ASC",
+                (scan_id,)
+            )
+            for f in await f_cur.fetchall():
+                yield f"data: {json.dumps({'type': 'finding_recorded', 'scan_id': scan_id, 'data': {'finding_id': f[0], 'severity': f[1], 'owasp_category': f[2], 'status': f[3]}})}\n\n"
+
             terminal_type = "scan_complete" if current_status == "COMPLETED" else "error"
             yield f"data: {json.dumps({'type': terminal_type, 'scan_id': scan_id, 'data': {'status': current_status}})}\n\n"
         return StreamingResponse(completed_generator(), media_type="text/event-stream")

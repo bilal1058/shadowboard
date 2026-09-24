@@ -194,6 +194,8 @@ async def favicon():
 
 @app.get("/{full_path:path}", include_in_schema=False)
 async def serve_spa(full_path: str = ""):
+    if full_path.startswith("api/") or full_path == "api":
+        raise HTTPException(status_code=404, detail="API endpoint not found")
     # If a specific static file exists directly in frontend_static_dir, serve it
     file_path = os.path.join(frontend_static_dir, full_path)
     if full_path and os.path.isfile(file_path):

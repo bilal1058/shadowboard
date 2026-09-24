@@ -60,6 +60,43 @@ export interface Policy {
   policy: Record<string, unknown>;
 }
 
+export interface Attempt {
+  id: number;
+  turn: number;
+  strategy: string;
+  prompt: string;
+  response: string;
+  stance: string;
+  reason: string;
+  confidence: number;
+  next_strategy?: string;
+  observation?: Record<string, unknown>;
+  events?: Array<{ event_type: string; event_data: Record<string, unknown>; source: string }>;
+}
+
+export interface Objective {
+  id: number;
+  family: string;
+  rule_id: string;
+  objective: string;
+  status: string;
+  verdict: string;
+  attack_outcome: string;
+  evidence_status: string;
+  severity: string;
+  owasp_category: string;
+  taxonomy_version?: string;
+  application_security_class?: string;
+  attempts: Attempt[];
+}
+
+export interface ScanDetails extends ScanRun {
+  findings: Finding[];
+  objectives: Objective[];
+  attempts: Attempt[];
+  target_info?: Record<string, any>;
+}
+
 export interface EvidencePackage {
   scan_id: number;
   finding_id: string;

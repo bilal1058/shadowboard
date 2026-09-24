@@ -85,7 +85,13 @@ export function useScanStream(scanId: number) {
   const [isStreaming, setIsStreaming] = useState(false);
 
   useEffect(() => {
-    if (!scanId) return;
+    if (!scanId) {
+      setEvents([]);
+      setIsStreaming(false);
+      return;
+    }
+    setEvents([]);
+    setIsStreaming(true);
     const token = localStorage.getItem('sb_api_key') || 'shadowboard_admin_secret_2026';
     const eventSource = new EventSource(`/api/scans/${scanId}/stream?api_key=${encodeURIComponent(token)}`);
 
