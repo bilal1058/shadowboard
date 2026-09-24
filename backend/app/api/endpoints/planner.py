@@ -15,8 +15,8 @@ router = APIRouter(prefix="/planner", tags=["Autonomous Attack Planner"])
 class GeneratePlanRequest(BaseModel):
     target_id: int
     objective_vector: Optional[str] = None
-    target_tenant: str = "1042"
-    session_user_id: str = "1001"
+    target_tenant: str = "tenant_target_02"
+    session_user_id: str = "user_session_01"
 
 
 class ExecutePlanRequest(BaseModel):

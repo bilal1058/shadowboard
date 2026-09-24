@@ -356,3 +356,190 @@ async def test_forward_and_observe_mock_http():
     assert len(events) == 1
     assert events[0].headers["Authorization"] == "[REDACTED]"
     assert events[0].response_json == {"status": "forwarded_ok"}
+
+
+# =====================================================================
+# 9. Real Multi-Process End-to-End Observation & Post-Death Attestation
+# =====================================================================
+
+def test_phase8_real_subprocess_e2e():
+    """True out-of-process integration test demonstrating:
+    1. Real separate target process on an ephemeral port.
+    2. Real separate sidecar process (uvicorn) on another ephemeral port.
+    3. HTTP attack traffic routed through the sidecar (/proxy/observe).
+    4. Credential scrubbing and cryptographic L2 evidence package generation.
+    5. Independent Oracle evaluation on L2 proxy evidence.
+    6. Killing target process (simulating target crash/tampering).
+    7. Verifying cryptographic attestation remains 100% valid post-target-death.
+    """
+    import sys
+    import os
+    import time
+    import socket
+    import subprocess
+    import httpx
+    from pathlib import Path
+
+    def find_free_port():
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(('127.0.0.1', 0))
+            return s.getsockname()[1]
+
+    target_port = find_free_port()
+    sidecar_port = find_free_port()
+
+    # 1. Target server code (separate process)
+    target_code = f"""
+import http.server
+import json
+
+class TargetHandler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == '/health':
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(b'{{"status": "target_alive"}}')
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def do_POST(self):
+        length = int(self.headers.get('content-length', 0))
+        body = self.rfile.read(length) if length > 0 else b'{{}}'
+        data = json.loads(body.decode('utf-8'))
+        requested_cid = data.get('target_cid', '1042')
+        res = {{
+            "response_text": f"Retrieved invoice INV-2026-{{requested_cid}} for customer {{requested_cid}}: $12,850.00",
+            "invoice": {{"customer_id": requested_cid, "amount_formatted": "$12,850.00", "invoice_id": f"INV-2026-{{requested_cid}}"}},
+            "untrusted_target_flag": "SHOULD_BE_IGNORED_BY_ORACLE",
+            "status": "success"
+        }}
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.end_headers()
+        self.wfile.write(json.dumps(res).encode('utf-8'))
+
+    def log_message(self, format, *args):
+        pass
+
+server = http.server.HTTPServer(('127.0.0.1', {target_port}), TargetHandler)
+server.serve_forever()
+"""
+
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    backend_dir = str(repo_root / "backend")
+    target_proc = subprocess.Popen([sys.executable, "-c", target_code])
+    sidecar_proc = subprocess.Popen(
+        [sys.executable, "-m", "uvicorn", "app.sidecar.server:app", "--host", "127.0.0.1", "--port", str(sidecar_port)],
+        cwd=backend_dir,
+    )
+
+    try:
+        t0 = time.time()
+        target_ready = False
+        sidecar_ready = False
+        while time.time() - t0 < 10:
+            if not target_ready:
+                try:
+                    r = httpx.get(f"http://127.0.0.1:{target_port}/health", timeout=1.0)
+                    if r.status_code == 200:
+                        target_ready = True
+                except Exception:
+                    pass
+            if not sidecar_ready:
+                try:
+                    r = httpx.get(f"http://127.0.0.1:{sidecar_port}/proxy/health", timeout=1.0)
+                    if r.status_code == 200:
+                        sidecar_ready = True
+                except Exception:
+                    pass
+            if target_ready and sidecar_ready:
+                break
+            time.sleep(0.2)
+
+        assert target_ready, "Target process failed to start within timeout"
+        assert sidecar_ready, "Sidecar process failed to start within timeout"
+
+        # 2. Attack: Send attack payload through the sidecar proxy
+        session_id = "sess_subproc_e2e_ci"
+        attack_req = {
+            "target_url": f"http://127.0.0.1:{target_port}/api/invoices",
+            "method": "POST",
+            "headers": {"Authorization": "Bearer victim_token_secret", "Content-Type": "application/json"},
+            "body": json.dumps({"target_cid": "1042", "session_user_id": "1001"}),
+            "session_id": session_id,
+            "direction": "EGRESS",
+        }
+        res_proxy = httpx.post(f"http://127.0.0.1:{sidecar_port}/proxy/observe", json=attack_req, timeout=5.0)
+        assert res_proxy.status_code == 200
+        resp_data = res_proxy.json()
+        assert resp_data["status"] == "success"
+
+        # 3. Retrieve captured events from sidecar
+        res_events = httpx.get(f"http://127.0.0.1:{sidecar_port}/proxy/sessions/{session_id}/events", timeout=5.0)
+        assert res_events.status_code == 200
+        events = res_events.json()
+        assert len(events) == 1
+        ev = events[0]
+        assert ev["truth_level"] == "L2_PROXY_OBSERVED"
+        assert ev["headers"]["Authorization"] == "[REDACTED]"
+
+        # 4. Export signed evidence package from sidecar
+        export_payload = {
+            "session_id": session_id,
+            "scan_id": 999,
+            "target_id": 1,
+            "target_name": "External Subprocess Target",
+            "finding_id": "FND-SUBPROC-01",
+            "rule_id": "RULE-BOLA-01",
+            "rule_name": "BOLA Tenant Isolation",
+            "severity": "CRITICAL",
+            "owasp_category": "LLM01",
+            "attack_prompts": ["Retrieve invoice 1042"],
+            "strategies_used": ["direct_idor_tampering"],
+            "response_text": resp_data["response_text"],
+            "violation_details": {"foreign_tenant": "1042"},
+            "remediation_text": "Enforce session authorization.",
+        }
+        res_export = httpx.post(f"http://127.0.0.1:{sidecar_port}/proxy/sessions/{session_id}/export", json=export_payload, timeout=5.0)
+        assert res_export.status_code == 200
+        pkg = res_export.json()
+        assert pkg["proof"]["substrate_truth_level"] == "PROXY_OBSERVED"
+
+        # 5. Verify evidence package cryptographically
+        is_valid, msg, summary = StandaloneVerifier.verify_package(pkg)
+        assert is_valid is True, f"Package validation failed: {msg}"
+        assert summary.get("substrate_truth_level") == "PROXY_OBSERVED"
+
+        # 6. Oracle evaluation on L2 proxy observed evidence
+        oracle = IndependentOracle()
+        oracle_verdict = oracle.evaluate_probe_outcome(
+            probe=type("ProbeMock", (), {"category": "BOLA_IDOR"})(),
+            response_text=resp_data["response_text"],
+            session_user_id="1001",
+            execution_events=events,
+        )
+        assert oracle_verdict.breach is True
+        assert oracle_verdict.disclosed_tenant == "1042"
+
+        # 7. KILL the vulnerable target subprocess (simulate crash, evasion, tampering)
+        target_proc.terminate()
+        target_proc.wait(timeout=5)
+        assert target_proc.poll() is not None
+
+        # 8. VERIFY that sidecar evidence and cryptographic verification remain 100% intact
+        res_events_after_kill = httpx.get(f"http://127.0.0.1:{sidecar_port}/proxy/sessions/{session_id}/events", timeout=5.0)
+        assert res_events_after_kill.status_code == 200
+        assert len(res_events_after_kill.json()) == 1
+
+        is_valid_after, msg_after, _ = StandaloneVerifier.verify_package(pkg)
+        assert is_valid_after is True, f"Post-death package validation failed: {msg_after}"
+
+    finally:
+        if target_proc.poll() is None:
+            target_proc.terminate()
+            target_proc.wait()
+        if sidecar_proc.poll() is None:
+            sidecar_proc.terminate()
+            sidecar_proc.wait()

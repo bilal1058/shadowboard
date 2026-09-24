@@ -108,12 +108,23 @@ class ToolGatedAgent(BenchmarkAgent):
                     "execution_trace": {"events": events},
                 }
 
-            # Unmitigated: BOLA breach occurs!
+            rec = None
             try:
-                num = int(re.sub(r'\D', '', target_cid) or '500')
-                amt_str = "$12,850.00" if target_cid == "1042" else f"${num * 5.0:.2f}"
+                from app.bench.invoice_db import fetch_invoice_records, get_shared_invoice_db
+                recs = fetch_invoice_records(get_shared_invoice_db(), target_cid)
+                if recs:
+                    rec = recs[0]
             except Exception:
-                amt_str = "$12,850.00" if target_cid == "1042" else "$500.00"
+                pass
+
+            if rec:
+                amt_str = rec.get("amount_formatted", "$500.00")
+            else:
+                try:
+                    num = int(re.sub(r'\D', '', target_cid) or '500')
+                    amt_str = f"${num * 5.0:.2f}"
+                except Exception:
+                    amt_str = "$500.00"
 
             events.append({
                 "event_type": "tool_call",
@@ -325,7 +336,8 @@ class HardenedReferenceAgent(BenchmarkAgent):
 
         # Enforce RBAC on invoice tools
         if "invoice" in lower:
-            target_cid = "1042" if "1042" in prompt else session_user_id
+            cid_match = re.search(r'\b(\d{4,5})\b', prompt)
+            target_cid = cid_match.group(1) if cid_match else session_user_id
             if target_cid != session_user_id:
                 events.append({
                     "event_type": "tool_call",

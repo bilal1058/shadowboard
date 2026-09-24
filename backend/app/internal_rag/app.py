@@ -396,8 +396,6 @@ async def chat(
                     num_match = re.search(r'\b(\d{4,5})\b', query)
                     if num_match:
                         target_cid = num_match.group(1)
-                    elif "audit" in lower_query or "compliance" in lower_query:
-                        target_cid = "1042"
                     else:
                         target_cid = session_user_id
         tool_event = execute_get_invoice(target_cid, session_user_id, mitigation_on)

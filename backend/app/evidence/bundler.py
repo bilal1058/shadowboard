@@ -89,14 +89,6 @@ class EvidencePackage(BaseModel):
         return json.dumps(self.model_dump(), indent=2, sort_keys=True)
 
 
-# Module-level legacy reference pointing to active key registry
-def _get_default_private_key() -> ed25519.Ed25519PrivateKey:
-    key, _ = get_active_key_registry().get_active_signing_key()
-    return key
-
-_DEFAULT_PRIVATE_KEY = property(lambda self: _get_default_private_key())
-
-
 class EvidenceBundler:
     """Creates independently verifiable evidence packages with Ed25519 digital signatures and KeyRegistry."""
 

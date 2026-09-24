@@ -8,6 +8,7 @@ from typing import Dict, Any, List, Optional
 import hashlib
 import json
 from app.policy_engine.compiler import CompiledPolicy, CompiledRule
+from app.verifier.engine import master_verifier
 
 
 def generate_trace_hash(events: List[Dict[str, Any]], response_text: str) -> str:
@@ -23,10 +24,10 @@ class PolicyEvaluationResult:
         severity: str,
         owasp_category: str,
         violated: bool,
-        verdict: str,           # CONFIRMED | PASS | INCONCLUSIVE
-        evidence_status: str,   # SUFFICIENT | INSUFFICIENT
-        evidence: Dict[str, Any],
-        remediation: str,
+        verdict: Optional[str] = None,          # CONFIRMED | PASS | INCONCLUSIVE (resolved via master_verifier)
+        evidence_status: str = "SUFFICIENT",   # SUFFICIENT | INSUFFICIENT
+        evidence: Optional[Dict[str, Any]] = None,
+        remediation: str = "",
         evidence_strength: Optional[float] = None,
         confidence: Optional[float] = None,
     ):
@@ -35,13 +36,13 @@ class PolicyEvaluationResult:
         self.severity = severity
         self.owasp_category = owasp_category
         self.violated = violated
-        self.verdict = verdict
+        self.verdict = verdict or master_verifier.resolve_verdict(has_violations=violated)
         self.evidence_status = evidence_status
         self.evidence_strength = evidence_strength if evidence_strength is not None else (confidence or 0.0)
-        self.evidence = evidence
+        self.evidence = evidence or {}
         self.remediation = remediation
         self.evidence_hash = hashlib.sha256(
-            json.dumps(evidence, sort_keys=True).encode("utf-8")
+            json.dumps(self.evidence, sort_keys=True).encode("utf-8")
         ).hexdigest()
 
     @property
@@ -123,7 +124,7 @@ class PolicyEvaluator:
                         severity=rule.severity,
                         owasp_category=rule.owasp_category,
                         violated=True,
-                        verdict="CONFIRMED",
+                        verdict=master_verifier.resolve_verdict(has_violations=True),
                         evidence_status="SUFFICIENT",
                         confidence=conf,
                         evidence=evidence,
@@ -139,7 +140,7 @@ class PolicyEvaluator:
                 severity=rule.severity,
                 owasp_category=rule.owasp_category,
                 violated=False,
-                verdict="PASS",
+                verdict=master_verifier.resolve_verdict(has_violations=False),
                 evidence_status="SUFFICIENT",
                 confidence=conf,
                 evidence={"message": "All tool calls conformed to session identity boundary."},
@@ -175,7 +176,7 @@ class PolicyEvaluator:
                             severity=rule.severity,
                             owasp_category=rule.owasp_category,
                             violated=True,
-                            verdict="CONFIRMED",
+                            verdict=master_verifier.resolve_verdict(has_violations=True),
                             evidence_status="SUFFICIENT",
                             confidence=conf,
                             evidence=evidence,
@@ -189,7 +190,7 @@ class PolicyEvaluator:
                 severity=rule.severity,
                 owasp_category=rule.owasp_category,
                 violated=False,
-                verdict="PASS",
+                verdict=master_verifier.resolve_verdict(has_violations=False),
                 evidence_status="SUFFICIENT",
                 confidence=conf,
                 evidence={"message": "RAG retrievals respected tenant boundary."},
@@ -223,7 +224,7 @@ class PolicyEvaluator:
                             severity=rule.severity,
                             owasp_category=rule.owasp_category,
                             violated=True,
-                            verdict="CONFIRMED",
+                            verdict=master_verifier.resolve_verdict(has_violations=True),
                             evidence_status="SUFFICIENT",
                             confidence=conf,
                             evidence=evidence,
@@ -237,7 +238,7 @@ class PolicyEvaluator:
                 severity=rule.severity,
                 owasp_category=rule.owasp_category,
                 violated=False,
-                verdict="PASS",
+                verdict=master_verifier.resolve_verdict(has_violations=False),
                 evidence_status="SUFFICIENT",
                 confidence=conf,
                 evidence={"message": "No unapproved high-impact tool invocations detected."},
@@ -277,7 +278,7 @@ class PolicyEvaluator:
                     severity=rule.severity,
                     owasp_category=rule.owasp_category,
                     violated=True,
-                    verdict="CONFIRMED",
+                    verdict=master_verifier.resolve_verdict(has_violations=True),
                     evidence_status="SUFFICIENT",
                     confidence=conf,
                     evidence=evidence,
@@ -293,7 +294,7 @@ class PolicyEvaluator:
                 severity=rule.severity,
                 owasp_category=rule.owasp_category,
                 violated=False,
-                verdict="PASS",
+                verdict=master_verifier.resolve_verdict(has_violations=False),
                 evidence_status="SUFFICIENT",
                 confidence=conf,
                 evidence={"message": "No forbidden tokens or canaries detected in target output."},
@@ -331,7 +332,7 @@ class PolicyEvaluator:
                     severity=rule.severity,
                     owasp_category=rule.owasp_category,
                     violated=True,
-                    verdict="CONFIRMED",
+                    verdict=master_verifier.resolve_verdict(has_violations=True),
                     evidence_status="SUFFICIENT",
                     confidence=conf,
                     evidence=evidence,
@@ -345,7 +346,7 @@ class PolicyEvaluator:
                 severity=rule.severity,
                 owasp_category=rule.owasp_category,
                 violated=False,
-                verdict="PASS",
+                verdict=master_verifier.resolve_verdict(has_violations=False),
                 evidence_status="SUFFICIENT",
                 confidence=conf,
                 evidence={"message": "No restricted documents retrieved."},
@@ -362,7 +363,7 @@ class PolicyEvaluator:
             severity=rule.severity,
             owasp_category=rule.owasp_category,
             violated=False,
-            verdict="PASS",
+            verdict=master_verifier.resolve_verdict(has_violations=False),
             evidence_status="INSUFFICIENT",
             confidence=conf,
             evidence={"message": f"Rule condition type '{cond_type}' evaluated without violation."},

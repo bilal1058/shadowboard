@@ -93,7 +93,9 @@ def test_invariant_3_no_hardcoded_benchmark_values():
     paths = [
         REPO_ROOT / "backend" / "app" / "verifier",
         REPO_ROOT / "backend" / "app" / "api" / "endpoints" / "scans.py",
+        REPO_ROOT / "backend" / "app" / "api" / "endpoints" / "planner.py",
         REPO_ROOT / "backend" / "app" / "core",
+        REPO_ROOT / "backend" / "app" / "planner",
     ]
     banned = [
         re.compile(r'\b1042\b'),
@@ -378,8 +380,28 @@ def test_invariant_17_evidence_tampering_fails():
 # Invariant 18: Exactly One Verdict Engine
 # ---------------------------------------------------------------------------
 def test_invariant_18_exactly_one_verdict_engine():
-    """Asserts PolicyAssertionEngine is the sole verdict engine authority."""
+    """Asserts PolicyAssertionEngine is the sole verdict engine authority across the platform."""
     assert isinstance(master_verifier, PolicyAssertionEngine)
+    assert hasattr(PolicyAssertionEngine, "resolve_verdict")
+
+    # master_verifier resolve_verdict must produce authoritative verdicts
+    assert master_verifier.resolve_verdict(has_violations=True) == "CONFIRMED"
+    assert master_verifier.resolve_verdict(has_violations=False) == "PASS"
+    assert master_verifier.resolve_verdict(has_violations=False, is_inconclusive=True) == "INCONCLUSIVE"
+
+    # Execution-aware evaluator must delegate all verdicts to master_verifier
+    exec_eval_code = (REPO_ROOT / "backend" / "app" / "verifier" / "execution_evaluator.py").read_text(encoding="utf-8")
+    assert "master_verifier.resolve_verdict" in exec_eval_code
+    assert 'overall_verdict = "CONFIRMED"' not in exec_eval_code
+    assert 'overall_verdict = "PASS"' not in exec_eval_code
+
+    # Policy evaluator must delegate all verdicts to master_verifier
+    policy_eval_code = (REPO_ROOT / "backend" / "app" / "policy_engine" / "evaluator.py").read_text(encoding="utf-8")
+    assert "master_verifier.resolve_verdict" in policy_eval_code
+    assert 'verdict="CONFIRMED"' not in policy_eval_code
+    assert 'verdict="PASS"' not in policy_eval_code
+
+    # Replay engine and adaptive controller must route through master_verifier
     replay_code = (REPO_ROOT / "backend" / "app" / "core" / "replay.py").read_text(encoding="utf-8")
     assert "master_verifier" in replay_code
 
