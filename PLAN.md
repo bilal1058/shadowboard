@@ -70,7 +70,7 @@
 | **5** | Honest Targets & Session-Isolated Mitigation | **GREEN / COMPLETED** | `pytest backend/tests -v` | 146 passed, 1 skipped, 0 failed in 7.66s (10/10 Phase 5 tests passed) | `4426e4b` |
 | **6** | Statistical & Documentation Honesty | **GREEN / COMPLETED** | `pytest backend/tests -v` | 154 passed, 1 skipped, 0 failed in 11.20s (8/8 Phase 6 tests passed) | `ab5b308` |
 | **7** | Permanent CI Regression Enforcement Suite | **GREEN / COMPLETED** | `pytest backend/tests -v` & `python scripts/ci_enforcement_audit.py` | 177 passed, 1 skipped, 0 failed in 8.67s; 23/23 CI invariant tests passed; Standalone audit passed (7/7 checks) | `926a538` |
-| **8** | (Optional) Out-of-Process Observation Sidecar | Pending | TBD | TBD | Pending |
+| **8** | (Optional) Out-of-Process Observation Sidecar | **GREEN / COMPLETED** | `pytest backend/tests/test_phase8_observation_sidecar.py -v` | 185 passed, 1 skipped, 0 failed in 9.86s (8/8 Phase 8 tests passed); Standalone L2 sidecar verified | `d481471` |
 
 ---
 
@@ -338,4 +338,39 @@
   - `python scripts/ci_enforcement_audit.py`: 7/7 checks PASS.
   - `pytest backend/tests/test_phase7_permanent_ci_suite.py`: 23/23 tests PASS.
   - Full suite `pytest backend/tests -v`: **177 passed, 1 skipped, 0 failed in 8.67s**.
+
+---
+
+## 12. Phase 8 Detailed Execution Log
+
+- [x] **8.1 L2 Observation Sidecar Architecture & Data Model**:
+  - Implemented `backend/app/sidecar/models.py` defining `NetworkObservationEvent`, `TrafficDirection`, and `SidecarSessionSummary`.
+  - Built automatic header credential sanitization (redacting `Authorization`, `X-API-Key`, `Cookie`, `Token` to `[REDACTED]`).
+  - Added canonical conversion mapping raw wire captures to ShadowBoard `proxy_network_call` execution events.
+- [x] **8.2 Observation Proxy & Interceptor (`backend/app/sidecar/proxy.py`)**:
+  - Implemented thread-safe `ObservationProxy` with partitioned session buffers.
+  - Implemented async HTTP request forwarding with payload hashing (`forward_and_observe`).
+  - Computed session summaries with binary Merkle tree root (`MerkleTree`) and linear event chain hash.
+  - Implemented `export_l2_evidence_package` embedding `substrate_truth_level: "PROXY_OBSERVED"` with Ed25519 digital signature.
+- [x] **8.3 Standalone ASGI Sidecar Server (`backend/app/sidecar/server.py`)**:
+  - Built standalone FastAPI application exposing `/proxy/observe`, `/proxy/sessions/{id}/events`, `/proxy/sessions/{id}/summary`, `/proxy/sessions/{id}/export`, and `/proxy/health`.
+- [x] **8.4 Verifier & Evaluation Engine L2 Integration**:
+  - Updated `PolicyAssertionEngine.verify` in `backend/app/verifier/engine.py` to audit `proxy_network_call` events and emit `L2_PROXY_OBSERVED` evidence level.
+  - Updated `ExecutionAwareEvaluator.audit_trace` in `backend/app/verifier/execution_evaluator.py` to recognize proxy network observations and issue `L2_PROXY_OBSERVED` attestation.
+  - Updated `IndependentOracle.evaluate` in `backend/app/bench/oracle.py` to incorporate out-of-band proxy observations into ground-truth evaluation.
+- [x] **8.5 Gaslighting & Telemetry Suppression Defeat**:
+  - Proved that when an adversarial or uninstrumented target agent claims verbal refusal in text and omits tool call telemetry from its response, the out-of-band proxy captures the wire interaction, proves the BOLA breach, and generates an independently signed evidence package.
+  - Proved that when a target hallucinates numbers without wire traffic, the proxy confirms 0 network calls were made.
+- [x] **8.6 Dedicated Phase 8 Test Suite (`backend/tests/test_phase8_observation_sidecar.py`)**:
+  - All 8 tests pass:
+    - `test_sidecar_models_and_sanitization`: verified sanitization and canonical mapping.
+    - `test_sidecar_session_isolation_and_buffer_cleanup`: verified per-session buffer isolation.
+    - `test_sidecar_session_summary_and_merkle_tree`: verified binary Merkle tree and linear hash chains.
+    - `test_l2_evidence_cryptography_and_provenance`: verified offline validation with `StandaloneVerifier`.
+    - `test_detect_target_gaslighting_telemetry_suppression`: verified gaslighting defeat across PolicyAssertionEngine, ExecutionAwareEvaluator, and IndependentOracle.
+    - `test_detect_target_hallucination_without_network_breach`: verified wire event verification.
+    - `test_sidecar_standalone_api_endpoints`: verified FastAPI proxy endpoints.
+    - `test_forward_and_observe_mock_http`: verified HTTP forwarding and observation capture.
+  - Full test suite: **185 passed, 1 skipped, 0 failed in 9.86s**.
+
 
