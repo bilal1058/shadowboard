@@ -3,12 +3,18 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+import sys
 from loguru import logger
 import os
 from app.core.config import settings
 
 security = HTTPBearer(auto_error=False)
-limiter = Limiter(key_func=get_remote_address)
+is_test_env = settings.APP_ENV == "test" or "pytest" in sys.modules
+limiter = Limiter(
+    key_func=get_remote_address,
+    default_limits=[settings.API_KEY_RATE_LIMIT],
+    enabled=not is_test_env
+)
 
 
 def validate_api_key(credentials: HTTPAuthorizationCredentials = security) -> str:

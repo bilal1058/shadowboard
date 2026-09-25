@@ -130,10 +130,25 @@ class LocalVectorStore:
         norm = np.linalg.norm(vector)
         return vector / norm if norm else vector
 
-    def search(self, query: str, top_k: int = 3) -> list[dict[str, Any]]:
+    def search(
+        self,
+        query: str,
+        top_k: int = 3,
+        allowed_access_tiers: set[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Rank only documents the authenticated principal may retrieve.
+
+        Filtering after similarity ranking leaks restricted document existence and
+        can expose it through model context.  The ACL predicate is therefore
+        applied before scoring and before any result metadata is returned.
+        """
         query_vector = self._embed(query)
         scores = self.vectors @ query_vector
-        ranked_indices = np.argsort(scores)[::-1][:top_k]
+        candidate_indices = [
+            index for index, chunk in enumerate(self.chunks)
+            if allowed_access_tiers is None or chunk["access_tier"] in allowed_access_tiers
+        ]
+        ranked_indices = sorted(candidate_indices, key=lambda index: scores[index], reverse=True)[:top_k]
         retrieved_at = datetime.now(timezone.utc).isoformat()
         return [
             {

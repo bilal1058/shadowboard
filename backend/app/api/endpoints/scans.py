@@ -111,7 +111,14 @@ def compute_risk_score(verdict_counts: Dict[str, int]) -> tuple:
     return score, grade
 
 
-async def run_scan_task(scan_id: int, target_id: int, scan_mode: str, mitigation_enabled: bool):
+async def run_scan_task(
+    scan_id: int,
+    target_id: int,
+    scan_mode: str,
+    mitigation_enabled: bool = False,
+    session_identities: Optional[List[str]] = None,
+    foreign_tenants: Optional[List[str]] = None,
+):
     try:
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute("PRAGMA journal_mode=WAL;")
@@ -139,21 +146,10 @@ async def run_scan_task(scan_id: int, target_id: int, scan_mode: str, mitigation
             base_url = target_row[1]
             capabilities = json.loads(target_row[2])
 
-            # 3. Synchronize mitigation state
-            try:
-                async with httpx.AsyncClient(timeout=3.0) as client:
-                    await client.put(
-                        f"{base_url}/config/mitigation",
-                        json={"enabled": mitigation_enabled},
-                    )
-            except Exception:
-                pass
-
-            await db.execute(
-                "UPDATE scan_runs SET mitigation_enabled = ? WHERE id = ?",
-                (mitigation_enabled, scan_id),
-            )
-            await db.commit()
+            # 3. Setup Tenant Matrix (Phase 9.3)
+            s_identities = session_identities or ["tenant_alpha", "tenant_beta"]
+            f_tenants = foreign_tenants or ["tenant_victim", "tenant_partner"]
+            tested_tenant_matrix: List[Dict[str, Any]] = []
 
             # 4. Fetch policy
             cursor = await db.execute(
@@ -171,7 +167,8 @@ async def run_scan_task(scan_id: int, target_id: int, scan_mode: str, mitigation
                 target_capabilities=capabilities,
                 scan_id=scan_id,
                 target_id=target_id,
-                mitigation_enabled=mitigation_enabled,
+                session_user_id=s_identities[0] if s_identities else None,
+                target_tenant=f_tenants[0] if f_tenants else None,
             )
 
 
@@ -260,10 +257,35 @@ async def run_scan_task(scan_id: int, target_id: int, scan_mode: str, mitigation
                         "events": attempt.get("execution_events", []),
                     })
 
-                # Execute adaptive attack battery with 100+ turns allocation
-                res = await controller.execute_objective(
-                    family, rule, max_turns=turns_per_rule, on_turn_completed=on_turn_cb
-                )
+                # Execute adaptive attack battery
+                if family == "agency":
+                    res = None
+                    matrix_attempts = []
+                    for s_id in s_identities:
+                        for f_tid in f_tenants:
+                            if s_id == f_tid:
+                                continue
+                            controller.session_user_id = s_id
+                            controller.target_tenant = f_tid
+                            sub_res = await controller.execute_objective(
+                                family, rule, max_turns=min(10, turns_per_rule), on_turn_completed=on_turn_cb
+                            )
+                            matrix_attempts.extend(sub_res.get("attempts", []))
+                            tested_tenant_matrix.append({
+                                "session_identity": s_id,
+                                "foreign_tenant": f_tid,
+                                "status": sub_res["status"],
+                                "attack_outcome": sub_res.get("attack_outcome", "INCONCLUSIVE"),
+                                "attempts_count": len(sub_res.get("attempts", [])),
+                            })
+                            if res is None or sub_res["status"] in ("CONFIRMED", "LIKELY"):
+                                res = sub_res
+                    if res:
+                        res["attempts"] = matrix_attempts
+                else:
+                    res = await controller.execute_objective(
+                        family, rule, max_turns=turns_per_rule, on_turn_completed=on_turn_cb
+                    )
 
                 # Record attempts with provenance
                 for attempt in res["attempts"]:
@@ -385,7 +407,7 @@ async def run_scan_task(scan_id: int, target_id: int, scan_mode: str, mitigation
                 "overall_score = ?, risk_grade = ?, "
                 "objectives_tested = ?, confirmed_count = ?, likely_count = ?, "
                 "inconclusive_count = ?, pass_count = ?, error_count = ?, "
-                "not_applicable_count = ?, policy_coverage = ? "
+                "not_applicable_count = ?, policy_coverage = ?, tenant_matrix_json = ? "
                 "WHERE id = ?",
                 (
                     overall_score, risk_grade,
@@ -397,6 +419,7 @@ async def run_scan_task(scan_id: int, target_id: int, scan_mode: str, mitigation
                     verdict_counts.get("ERROR", 0),
                     verdict_counts.get("NOT_APPLICABLE", 0),
                     policy_coverage,
+                    json.dumps(tested_tenant_matrix),
                     scan_id,
                 ),
             )
@@ -413,6 +436,7 @@ async def run_scan_task(scan_id: int, target_id: int, scan_mode: str, mitigation
                 "passed": verdict_counts.get("PASS", 0),
                 "not_applicable": verdict_counts.get("NOT_APPLICABLE", 0),
                 "policy_coverage": round(policy_coverage, 2),
+                "tenant_matrix": tested_tenant_matrix,
             })
 
     except Exception as err:
@@ -444,8 +468,8 @@ async def trigger_scan(
             )
 
         cursor = await db.execute(
-            "INSERT INTO scan_runs (target_id, scan_mode, mitigation_enabled, status) VALUES (?, ?, ?, ?)",
-            (req.target_id, req.scan_mode, req.mitigation_enabled, "QUEUED"),
+            "INSERT INTO scan_runs (target_id, scan_mode, mitigation_enabled, status) VALUES (?, ?, FALSE, ?)",
+            (req.target_id, req.scan_mode, "QUEUED"),
         )
         await db.commit()
         scan_id = cursor.lastrowid
@@ -457,7 +481,8 @@ async def trigger_scan(
         scan_id=scan_id,
         target_id=req.target_id,
         scan_mode=req.scan_mode,
-        mitigation_enabled=req.mitigation_enabled,
+        session_identities=req.session_identities,
+        foreign_tenants=req.foreign_tenants,
     )
 
     return {
@@ -622,7 +647,7 @@ async def get_scan_details(scan_id: int, db: aiosqlite.Connection = Depends(get_
         "SELECT id, target_id, status, scan_mode, started_at, completed_at, "
         "overall_score, risk_grade, mitigation_enabled, "
         "objectives_tested, confirmed_count, likely_count, inconclusive_count, "
-        "pass_count, error_count, not_applicable_count, policy_coverage "
+        "pass_count, error_count, not_applicable_count, policy_coverage, tenant_matrix_json "
         "FROM scan_runs WHERE id = ?",
         (scan_id,),
     )
@@ -777,6 +802,7 @@ async def get_scan_details(scan_id: int, db: aiosqlite.Connection = Depends(get_
         "errors": row[14],
         "not_applicable": row[15],
         "policy_coverage": row[16],
+        "tenant_matrix": json.loads(row[17]) if len(row) > 17 and row[17] else [],
         "findings": findings,
         "objectives": objectives,
         "attempts": all_flat_attempts,
@@ -897,7 +923,7 @@ class SandboxProbeRequest(BaseModel):
     target_id: int
     prompt: str
     mitigation_enabled: bool = False
-    session_user_id: str = "1001"
+    session_user_id: str = "usr_authenticated_tenant"
 
 
 @router.post("/sandbox/probe")
@@ -925,10 +951,6 @@ async def execute_sandbox_probe(request: SandboxProbeRequest, db: aiosqlite.Conn
                     path_prefix = "/target-app"
                 
                 async with httpx.AsyncClient(transport=httpx.ASGITransport(app=root_app), base_url="http://test") as client:
-                    try:
-                        await client.put(f"{path_prefix}/config/mitigation", json={"enabled": request.mitigation_enabled})
-                    except Exception:
-                        pass
                     resp = await client.post(
                         f"{path_prefix}/chat",
                         json={"messages": [{"role": "user", "content": request.prompt}]},
@@ -937,10 +959,6 @@ async def execute_sandbox_probe(request: SandboxProbeRequest, db: aiosqlite.Conn
                     raw_data = resp.json() if resp.status_code == 200 else {"response_text": resp.text}
             except Exception:
                 async with httpx.AsyncClient(timeout=10.0) as client:
-                    try:
-                        await client.put(f"{base_url}/config/mitigation", json={"enabled": request.mitigation_enabled})
-                    except Exception:
-                        pass
                     resp = await client.post(
                         f"{base_url}/chat",
                         json={"messages": [{"role": "user", "content": request.prompt}]},
@@ -949,10 +967,6 @@ async def execute_sandbox_probe(request: SandboxProbeRequest, db: aiosqlite.Conn
                     raw_data = resp.json() if resp.status_code == 200 else {"response_text": resp.text}
         else:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                try:
-                    await client.put(f"{base_url}/config/mitigation", json={"enabled": request.mitigation_enabled})
-                except Exception:
-                    pass
                 resp = await client.post(
                     f"{base_url}/chat",
                     json={"messages": [{"role": "user", "content": request.prompt}]},

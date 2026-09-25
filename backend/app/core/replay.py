@@ -35,6 +35,7 @@ class RegressionReplayEngine:
         scan_mode: str = "INSTRUMENTED",
         target_capabilities: Optional[Dict[str, Any]] = None,
         client: Optional[httpx.AsyncClient] = None,
+        session_user_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Replay a saved exploit sequence against the target.
         
@@ -44,6 +45,7 @@ class RegressionReplayEngine:
         
         sequence = json.loads(exploit_sequence_json)
         rule = PolicyRule(**rule_dict)
+        session_uid = session_user_id or "session_replay_auth"
         
         replay_results = []
         
@@ -57,14 +59,12 @@ class RegressionReplayEngine:
                     resp = await client.post(
                         f"{target_base_url}/chat",
                         json={"messages": [{"role": "user", "content": prompt_text}]},
-                        headers={"x-customer-id": "1001"},
                     )
                 else:
                     async with httpx.AsyncClient(timeout=15.0) as c:
                         resp = await c.post(
                             f"{target_base_url}/chat",
                             json={"messages": [{"role": "user", "content": prompt_text}]},
-                            headers={"x-customer-id": "1001"},
                         )
                 if resp.status_code == 200:
                     body = resp.json()
@@ -85,8 +85,7 @@ class RegressionReplayEngine:
                 response_text=response_text,
                 execution_events=execution_events,
                 attack_prompt=prompt_text,
-                session_user_id="1001",
-                target_mode=scan_mode,
+                session_user_id=session_uid,
                 target_capabilities=target_capabilities,
             )
             

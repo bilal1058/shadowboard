@@ -18,7 +18,7 @@ export class AuthService {
   }
 
   isAuthenticated(): boolean {
-    return typeof window !== 'undefined' ? !!localStorage.getItem('sb_api_key') : false;
+    return false;
   }
 }
 

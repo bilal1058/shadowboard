@@ -181,3 +181,27 @@ async def safe_http_get_json(
                 return response.json()
             except Exception as exc:
                 raise SSRFValidationError(f"Target did not return valid JSON: {exc}") from exc
+
+
+async def safe_http_put_json(
+    url: str,
+    payload: Dict[str, Any],
+    headers: Optional[Dict[str, str]] = None,
+    allow_local: bool = False,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+) -> Dict[str, Any]:
+    """Issue a bounded non-redirecting configuration request to a validated target."""
+    validated_url = validate_target_url(url, allow_local=allow_local)
+    try:
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
+            response = await client.put(validated_url, json=payload, headers=headers or {})
+    except httpx.HTTPError as exc:
+        raise SSRFValidationError(f"Target configuration request failed: {exc}") from exc
+    if response.is_redirect or response.status_code != 200:
+        raise SSRFValidationError(f"Target configuration endpoint returned {response.status_code}.")
+    if len(response.content) > MAX_RESPONSE_BYTES:
+        raise SSRFValidationError("Target configuration response exceeded the size limit.")
+    try:
+        return response.json()
+    except ValueError as exc:
+        raise SSRFValidationError("Target configuration response was not valid JSON.") from exc

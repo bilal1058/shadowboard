@@ -9,6 +9,7 @@ import os
 import sys
 import secrets
 from app.core.config import settings
+from app.core.admin_session import COOKIE_NAME, is_valid_admin_session
 
 PUBLIC_API_PATHS = {
     "/api/health",
@@ -19,6 +20,7 @@ PUBLIC_API_PATHS = {
     "/openapi.json",
     "/redoc",
     "/favicon.ico",
+    "/api/auth/session",
 }
 
 
@@ -54,7 +56,10 @@ class AdminAuthMiddleware(BaseHTTPMiddleware):
         if path in PUBLIC_API_PATHS:
             return await call_next(request)
 
-        admin_key = os.getenv("SHADOWBOARD_ADMIN_KEY") or os.getenv("SHADOWBOARD_API_KEY") or settings.admin_key
+        if is_test_environment():
+            admin_key = os.environ.get("SHADOWBOARD_ADMIN_KEY") or os.environ.get("SHADOWBOARD_API_KEY")
+        else:
+            admin_key = os.environ.get("SHADOWBOARD_ADMIN_KEY") or os.environ.get("SHADOWBOARD_API_KEY") or settings.admin_key
 
         if not admin_key:
             # If unset in non-test environments: fail closed (refuse to serve /api)
@@ -66,7 +71,12 @@ class AdminAuthMiddleware(BaseHTTPMiddleware):
             # In test environment when no admin key is configured, allow legacy test fixtures
             return await call_next(request)
 
-        # Key is configured: inspect Authorization / X-API-Key headers
+        # Key is configured: accept a server-signed HttpOnly console session
+        # or an Authorization header for non-browser automation. Query-string
+        # credentials are prohibited because URLs leak into logs and history.
+        if is_valid_admin_session(request.cookies.get(COOKIE_NAME)):
+            return await call_next(request)
+
         auth_header = request.headers.get("Authorization", "")
         api_key_header = request.headers.get("X-API-Key", "")
 
@@ -77,10 +87,6 @@ class AdminAuthMiddleware(BaseHTTPMiddleware):
             token = auth_header.strip()
         elif api_key_header:
             token = api_key_header.strip()
-        elif request.query_params.get("api_key"):
-            token = request.query_params.get("api_key", "").strip()
-        elif request.query_params.get("token"):
-            token = request.query_params.get("token", "").strip()
 
         if not token:
             return JSONResponse(
@@ -110,6 +116,13 @@ class ProductionHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; connect-src 'self' http://localhost:* http://127.0.0.1:* ws: wss:; img-src 'self' data:; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            "font-src 'self' https://fonts.gstatic.com; "
+            "script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdn.jsdelivr.net; "
+            "base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
+        )
         response.headers["Server"] = "ShadowBoard"
         response.headers["Cache-Control"] = "no-store"
         return response
@@ -184,7 +197,7 @@ def init_cors(app, allowed_origins: list):
         allow_origins=filtered_origins,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type", "X-API-Key", "X-Request-ID"],
+        allow_headers=["*"],
         expose_headers=["X-Request-ID", "X-Total-Count", "Link"],
         max_age=3600,
     )

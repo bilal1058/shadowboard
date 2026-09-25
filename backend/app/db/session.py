@@ -56,6 +56,11 @@ async def get_db():
             await db.executescript(schema_sql)
             await _seed_default_targets(db)
             await db.commit()
+        try:
+            await db.execute("ALTER TABLE scan_runs ADD COLUMN tenant_matrix_json TEXT DEFAULT '[]';")
+            await db.commit()
+        except Exception:
+            pass
         yield db
 
 
@@ -67,13 +72,13 @@ async def _seed_default_targets(db):
             "name": "Meridian Support Assistant",
             "base_url": os.getenv("TARGET_APP_URL", "http://127.0.0.1:8000/target-app"),
             "target_type": "EXTERNAL_SUPPORT",
-            "capabilities": {"chat": True, "rag": False, "tools": False, "data_access": False, "has_rag": False, "has_tools": False, "has_memory": False, "tool_names": []},
+            "capabilities": {"chat": True, "rag": False, "tools": True, "data_access": True, "has_rag": False, "has_tools": True, "has_memory": False, "tool_names": ["get_invoice"]},
         },
         {
             "name": "Meridian Internal Knowledge Assistant",
             "base_url": "http://127.0.0.1:8000/internal-rag",
             "target_type": "INTERNAL_RAG",
-            "capabilities": {"chat": True, "rag": True, "tools": True, "data_access": True, "has_rag": True, "has_tools": True, "has_memory": False, "tool_names": ["get_invoice", "send_email"]},
+            "capabilities": {"chat": True, "rag": True, "tools": False, "data_access": False, "has_rag": True, "has_tools": False, "has_memory": False, "tool_names": []},
         },
     ]
     for target in reference_targets:
@@ -89,6 +94,17 @@ async def _seed_default_targets(db):
                 "INSERT INTO policies (target_id, policy_json, taxonomy, taxonomy_version) VALUES (?, ?, ?, ?)",
                 (target_id, json.dumps(default_policy_for_target_type(target["target_type"])), "OWASP", "2025"),
             )
+        else:
+            target_id = row[0]
+            await db.execute(
+                "UPDATE targets SET name = ?, target_type = ?, capabilities_json = ? WHERE id = ?",
+                (target["name"], target["target_type"], json.dumps(target["capabilities"]), target_id),
+            )
+        await db.execute(
+            "INSERT INTO target_security_config (target_id, mitigation_enabled) VALUES (?, FALSE) "
+            "ON CONFLICT(target_id) DO NOTHING",
+            (target_id,),
+        )
     cursor = await db.execute("SELECT COUNT(*) FROM scan_runs;")
     if (await cursor.fetchone())[0] == 0:
         await db.execute(
@@ -152,4 +168,3 @@ async def close_db():
 def get_db_sync():
     """Return DB connection string."""
     return DB_URL
-

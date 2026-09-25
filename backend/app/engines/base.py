@@ -20,6 +20,7 @@ class BaseEngine(ABC):
         strategy: str,
         history: List[Dict[str, Any]],
         observation: Optional[ObservationRecord] = None,
+        **kwargs: Any,
     ) -> str:
         """Build an attack prompt for the given strategy.
         

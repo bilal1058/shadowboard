@@ -21,9 +21,10 @@ export const TargetInspectorModal: React.FC<TargetInspectorModalProps> = ({
   const [loadingDocs, setLoadingDocs] = useState(false);
 
   // Interactive Sandbox Chat State
-  const [chatMessages, setChatMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string; latency?: number }>>([
+  const [chatMessages, setChatMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string; latency?: number; verdict?: string; stance?: string }>>([
     { role: 'assistant', content: 'Hello! I am ready to test. Send a prompt to verify my operational boundaries and responses.' }
   ]);
+  const [sandboxMitigation, setSandboxMitigation] = useState(true);
   const [promptInput, setPromptInput] = useState('');
   const [isSending, setIsSending] = useState(false);
 
@@ -94,35 +95,61 @@ export const TargetInspectorModal: React.FC<TargetInspectorModalProps> = ({
 
     try {
       const t0 = performance.now();
-      const chatEndpoint = `${target.base_url}/chat`;
-      const response = await fetch(chatEndpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-session-id': `sandbox_${Date.now()}`,
-        },
-        body: JSON.stringify({
-          messages: [{ role: 'user', content: userMsg }],
-        }),
+      // Route through ShadowBoard's audited backend probe engine
+      const res = await api.post<any>('/scans/sandbox/probe', {
+        target_id: target.id,
+        prompt: userMsg,
+        mitigation_enabled: sandboxMitigation,
       });
-
       const t1 = performance.now();
-      if (!response.ok) {
-        throw new Error(`Target responded with HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-      const replyText = data.reply || data.response || JSON.stringify(data);
+      const replyText = res.response_text || res.reply || res.response || JSON.stringify(res);
 
       setChatMessages((prev) => [
         ...prev,
-        { role: 'assistant', content: replyText, latency: Math.round(t1 - t0) },
+        {
+          role: 'assistant',
+          content: replyText,
+          latency: res.latency_ms || Math.round(t1 - t0),
+          verdict: res.verdict,
+          stance: res.stance,
+        },
       ]);
     } catch (err: any) {
-      setChatMessages((prev) => [
-        ...prev,
-        { role: 'assistant', content: `[Error: ${err.message || 'Target communication failed'}]` },
-      ]);
+      // Resilient fallback to direct target chat if backend probe fails
+      try {
+        const t0 = performance.now();
+        let chatEndpoint = `${target.base_url}/chat`;
+        if (target.base_url.startsWith('/')) {
+          chatEndpoint = `${window.location.origin}${target.base_url}/chat`;
+        }
+        const response = await fetch(chatEndpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            messages: [{ role: 'user', content: userMsg }],
+          }),
+        });
+
+        const t1 = performance.now();
+        if (!response.ok) {
+          throw new Error(`Target responded with HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+        const replyText = data.response_text || data.reply || data.response || JSON.stringify(data);
+
+        setChatMessages((prev) => [
+          ...prev,
+          { role: 'assistant', content: replyText, latency: Math.round(t1 - t0) },
+        ]);
+      } catch (fallbackErr: any) {
+        setChatMessages((prev) => [
+          ...prev,
+          { role: 'assistant', content: `[Error: ${err.message || fallbackErr.message || 'Target communication failed'}]` },
+        ]);
+      }
     } finally {
       setIsSending(false);
     }
@@ -488,6 +515,27 @@ export const TargetInspectorModal: React.FC<TargetInspectorModalProps> = ({
           {/* TAB 4: INTERACTIVE CHAT SANDBOX */}
           {activeTab === 'sandbox' && (
             <div className="space-y-4 flex flex-col h-[480px]">
+              {/* Sandbox Controls Bar */}
+              <div className="flex items-center justify-between px-3 py-2 bg-[#0c0c12] border border-[#211e29] rounded-xl text-xs">
+                <div className="flex items-center space-x-2 text-slate-400">
+                  <span>🛡️ Target Mitigation:</span>
+                  <button
+                    type="button"
+                    onClick={() => setSandboxMitigation(!sandboxMitigation)}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all ${
+                      sandboxMitigation
+                        ? 'bg-emerald-950 text-emerald-300 border border-emerald-700/60 shadow-sm shadow-emerald-950'
+                        : 'bg-rose-950 text-rose-300 border border-rose-700/60 shadow-sm shadow-rose-950'
+                    }`}
+                  >
+                    {sandboxMitigation ? '🛡️ ACTIVE (Hardened)' : '⚠️ OFF (Vulnerable)'}
+                  </button>
+                </div>
+                <div className="text-[11px] font-mono text-slate-500">
+                  Audited via ShadowBoard Probe Engine
+                </div>
+              </div>
+
               <div className="flex-1 bg-[#070709] border border-[#23202b] rounded-xl p-4 overflow-y-auto space-y-3 font-mono text-xs">
                 {chatMessages.map((msg, idx) => (
                   <div
@@ -503,7 +551,20 @@ export const TargetInspectorModal: React.FC<TargetInspectorModalProps> = ({
                     >
                       <div className="text-[10px] font-mono opacity-70 mb-1 flex items-center justify-between space-x-2">
                         <span>{msg.role === 'user' ? 'USER' : target.name}</span>
-                        {msg.latency && <span>{msg.latency}ms</span>}
+                        <div className="flex items-center space-x-2">
+                          {msg.verdict && (
+                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
+                              msg.verdict === 'DEFENDED'
+                                ? 'bg-emerald-900/60 text-emerald-300 border border-emerald-700'
+                                : msg.verdict === 'BREACH'
+                                ? 'bg-rose-900/60 text-rose-300 border border-rose-700 animate-pulse'
+                                : 'bg-slate-800 text-slate-300 border border-slate-700'
+                            }`}>
+                              {msg.verdict}
+                            </span>
+                          )}
+                          {msg.latency && <span>{msg.latency}ms</span>}
+                        </div>
                       </div>
                       <div>{msg.content}</div>
                     </div>

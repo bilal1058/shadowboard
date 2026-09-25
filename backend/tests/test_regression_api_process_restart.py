@@ -16,6 +16,10 @@ def _run_process(code: str, db_path: Path) -> dict:
     env["PYTHONPATH"] = str(BACKEND) + os.pathsep + env.get("PYTHONPATH", "")
     env["SHADOWBOARD_DB_PATH"] = str(db_path)
     env["PYTHONIOENCODING"] = "utf-8"
+    env["APP_ENV"] = "test"
+    env["TESTING"] = "1"
+    env["SHADOWBOARD_ADMIN_KEY"] = ""
+    env["SHADOWBOARD_API_KEY"] = ""
     try:
         result = subprocess.run(
             [sys.executable, "-c", code],

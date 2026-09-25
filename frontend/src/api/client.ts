@@ -6,22 +6,18 @@ export class ApiClient {
 
   constructor(baseUrl: string = BASE_URL) {
     this.baseUrl = baseUrl;
-    this.apiKey = typeof window !== 'undefined'
-      ? (localStorage.getItem('sb_api_key') || 'shadowboard_admin_secret_2026')
-      : 'shadowboard_admin_secret_2026';
+    this.apiKey = null;
   }
 
   setApiKey(key: string) {
     this.apiKey = key;
     if (typeof window !== 'undefined') {
-      localStorage.setItem('sb_api_key', key);
     }
   }
 
   clearApiKey() {
     this.apiKey = null;
     if (typeof window !== 'undefined') {
-      localStorage.removeItem('sb_api_key');
     }
   }
 
@@ -41,6 +37,7 @@ export class ApiClient {
     const response = await fetch(`${this.baseUrl}${endpoint}`, {
       ...options,
       headers,
+      credentials: 'same-origin',
     });
 
     if (!response.ok) {
@@ -67,6 +64,21 @@ export class ApiClient {
       method: 'PUT',
       body: JSON.stringify(body),
     });
+  }
+
+  async establishBrowserSession(key: string): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/auth/session`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}` },
+      credentials: 'same-origin',
+    });
+    if (!response.ok) throw new Error('Administrative authentication failed.');
+    this.apiKey = null;
+  }
+
+  async destroyBrowserSession(): Promise<void> {
+    await fetch(`${this.baseUrl}/auth/session`, { method: 'DELETE', credentials: 'same-origin' });
+    this.apiKey = null;
   }
 }
 

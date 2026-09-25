@@ -1,3 +1,5 @@
+import os
+import sys
 from pydantic_settings import BaseSettings
 from pydantic import Field, field_validator
 from typing import Optional, List
@@ -18,6 +20,8 @@ class Settings(BaseSettings):
     # Central fail-closed administrative API key
     SHADOWBOARD_ADMIN_KEY: Optional[str] = None
     SHADOWBOARD_API_KEY: Optional[str] = None
+    ADMIN_SESSION_TTL_SECONDS: int = Field(default=1800, ge=300, le=28800)
+    TARGET_CONTROL_KEY: Optional[str] = None
 
     # Model providers
     TARGET_MODEL: str = "qwen-flash"
@@ -73,7 +77,7 @@ class Settings(BaseSettings):
         return origins
 
     model_config = {
-        "env_file": ".env",
+        "env_file": None if ("pytest" in sys.modules or os.getenv("APP_ENV") == "test" or "PYTEST_CURRENT_TEST" in os.environ) else (".env" if os.path.exists(".env") else ("backend/.env" if os.path.exists("backend/.env") else None)),
         "env_file_encoding": "utf-8",
         "case_sensitive": True,
         "extra": "ignore",
@@ -81,3 +85,4 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+

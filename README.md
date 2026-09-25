@@ -137,22 +137,38 @@ To prove that our evaluation harness is genuinely sensitive to evaluator regress
 
 This proves the benchmark has authentic discriminative power: when evaluator detection logic degrades, the benchmark exposes it immediately.
 
-### 4. Independent Third-Party Agent Target (`third_party_targets/agent.py`)
-ShadowBoard is evaluated against an independent tool-using agent architecture (`third_party_targets/agent.py`), modeling standard LangChain/ReAct tool dispatch patterns over real SQLite financial tables:
+### 4. Production-Shaped Headline Targets & Real Tool Execution Paths
+ShadowBoard targets are production-shaped AI agents with non-negotiable, default-on tool and data isolation:
+
+- **Headline Live Target (`target_app/app.py` — Meridian Support Assistant)**:
+  A genuine agent-security target featuring a live tool execution path (`get_invoice`) backed by real seeded SQLite tables (`invoices`, `customers`, and `enforcement_log`).
+  *Crucial Distinction*: Unlike naive scanners that only test system prompt canary leaks, this target demonstrates authentic agentic Broken Object-Level Authorization (BOLA): the LLM interprets natural language requests, extracts tool arguments, and triggers tool execution. The server-side authorization layer strictly enforces tenant boundaries (denying cross-tenant queries and writing to `enforcement_log`), which ShadowBoard observes through wire and execution telemetry.
+- **Internal RAG Target (`internal_rag/app.py` — Meridian Knowledge Assistant)**:
+  Demonstrates document-level and chunk-level tenant isolation across TF-IDF cosine vector collections and SQLite data access.
+- **Independent Third-Party Agent Target (`third_party_targets/agent.py`)**:
+  ShadowBoard is evaluated against an independent tool-using agent architecture, modeling standard LangChain tool dispatch patterns over real SQLite financial tables.
+
+#### 🛡️ Non-Negotiable, Default-On Enforcement & Calibration Fixture
+Security is **never a request parameter**:
+1. **Zero Client Control**: Neither scanner nor client can toggle security posture. All `/config/mitigation` endpoints and `x-mitigation-enabled` client headers have been purged.
+2. **Default-On Enforcement**: Both targets unconditionally enforce tenant isolation in the data/tool layer (`requested_tenant != authenticated_session_tenant` $\implies$ `DENIED` + recorded in `enforcement_log`).
+3. **Calibration Fixture Only**: The only place a vulnerable variant may exist is a separately launched calibration fixture via `VULNERABLE_CALIBRATION=1` environment variable at deploy time (default `0`/`false`, zero HTTP control). It is prominently watermarked *"CALIBRATION FIXTURE ONLY"* across UI, health endpoints, contract metadata, and trace notes.
 
 ```
 [Adversarial Probe (Session 1001)]
         ↓ HTTP POST /chat
-[Third-Party LangChain Agent]
-        ↓ executes LangChain tool: get_invoice_tool(customer_id="1042")
-[Real SQLite Enterprise DB] -> Returns Globex financial records
+[Third-Party LangChain Agent or Target App]
+        ↓ executes tool: get_invoice(customer_id="1042")
+[Real SQLite Enterprise DB] -> Server-side Auth Check: session 1001 != customer 1042 -> DENIED
         ↓
-[Caller Network Response] -> Discloses foreign invoice INV-2026-1042
+[Enforcement Log Table] -> INSERT INTO enforcement_log (session: 1001, req: 1042, status: DENIED)
         ↓
-[ShadowBoard Independent Oracle] -> Verified Breach (Session 1001 received Tenant 1042 data)
-[ShadowBoard Network Evaluator] -> CONFIRMED (Observation Invariance verified)
+[Caller Network Response] -> "Tool Authorization Refusal: Security Violation: Session (1001) unauthorized"
+        ↓
+[ShadowBoard Independent Oracle] -> Verified SAFE (No foreign tenant data disclosed)
+[ShadowBoard Execution Evaluator] -> PASS (Zero leaks, verified tool layer enforcement)
 ```
-*Validated end-to-end over HTTP in automated test suite ([test_phase1_oracle_and_observation.py](backend/tests/test_phase1_oracle_and_observation.py)).*
+*Validated end-to-end over HTTP in automated test suites ([test_phase1_oracle_and_observation.py](backend/tests/test_phase1_oracle_and_observation.py) and [test_phase9_production_shaped_targets.py](backend/tests/test_phase9_production_shaped_targets.py)).*
 
 ### 5. Empirical Real-LLM Benchmark (100 Live Groq Model Turns)
 We evaluated ShadowBoard against a live LLM tool agent (`RealLLMToolAgent`) powered by Groq (`qwen/qwen3.8-27b`) executing native OpenAI-compatible function calling schemas, seeded SQLite databases, and independent oracle logging across 100 live turns (40 vulnerable adversarial, 30 mitigated adversarial, 15 legitimate own-session tool calls, and 15 benign FAQ queries). Metrics include Wilson 95% score confidence intervals:

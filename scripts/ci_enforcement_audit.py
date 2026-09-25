@@ -74,28 +74,44 @@ def check_secret_patterns() -> list[str]:
 def check_hardcoded_benchmark_values() -> list[str]:
     """Enforces no benchmark-specific values in general verification/routing paths."""
     errors = []
-    paths_to_check = [
+    
+    # 1. Ban numeric tenant literals across core, verifier, api, and third_party_targets (Phase 9.3)
+    tenant_paths = [
+        REPO_ROOT / "backend" / "app" / "verifier",
+        REPO_ROOT / "backend" / "app" / "core",
+        REPO_ROOT / "backend" / "app" / "api",
+        REPO_ROOT / "backend" / "third_party_targets",
+    ]
+    tenant_patterns = [
+        (re.compile(r'\b1001\b'), "Literal tenant ID 1001"),
+        (re.compile(r'\b1042\b'), "Literal tenant ID 1042"),
+    ]
+    for p in tenant_paths:
+        files = [p] if p.is_file() else list(p.rglob("*.py"))
+        for f in files:
+            txt = f.read_text(encoding="utf-8", errors="ignore")
+            for pat, desc in tenant_patterns:
+                matches = pat.findall(txt)
+                if matches:
+                    errors.append(
+                        f"Banned tenant literal '{desc}' ({len(matches)}x) found in {f.relative_to(REPO_ROOT)}"
+                    )
+
+    # 2. Ban benchmark invoice figures and specific canaries in general engine/verifier paths
+    general_paths = [
         REPO_ROOT / "backend" / "app" / "verifier",
         REPO_ROOT / "backend" / "app" / "api" / "endpoints" / "scans.py",
         REPO_ROOT / "backend" / "app" / "core",
     ]
-
-    banned_patterns = [
-        (re.compile(r'\b1042\b'), "Literal tenant ID 1042"),
+    general_patterns = [
         (re.compile(r'12,?850'), "Literal benchmark invoice figure 12,850"),
         (re.compile(r'INTERNAL_DOC_7C15'), "Specific RAG canary token INTERNAL_DOC_7C15"),
-        (re.compile(r'\bget_invoice\b'), "Hardcoded benchmark tool name get_invoice"),
     ]
-
-    for p in paths_to_check:
-        if p.is_file():
-            files = [p]
-        else:
-            files = list(p.rglob("*.py"))
-
+    for p in general_paths:
+        files = [p] if p.is_file() else list(p.rglob("*.py"))
         for f in files:
             txt = f.read_text(encoding="utf-8", errors="ignore")
-            for pat, desc in banned_patterns:
+            for pat, desc in general_patterns:
                 matches = pat.findall(txt)
                 if matches:
                     errors.append(

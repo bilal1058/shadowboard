@@ -128,8 +128,8 @@ class AgencyEngine(BaseEngine):
         idx = len(history) % len(prompts)
         template = prompts[idx]
 
-        target_t = str(target_tenant or getattr(rule, "target_tenant", None) or "1042")
-        session_u = str(session_user_id or "1001")
+        target_t = str(target_tenant or getattr(rule, "target_tenant", None) or "target_victim")
+        session_u = str(session_user_id or "session_authenticated")
         invoice_id = f"INV-2026-{target_t}"
 
         try:

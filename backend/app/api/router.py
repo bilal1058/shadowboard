@@ -10,9 +10,11 @@ from app.api.endpoints import (
     bench,
     evidence,
     integrations,
+    auth_session,
 )
 
 api_router = APIRouter(prefix="/api")
+api_router.include_router(auth_session.router)
 
 @api_router.get("/health", tags=["Health"])
 async def api_health():

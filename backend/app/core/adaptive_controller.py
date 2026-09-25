@@ -55,7 +55,8 @@ class AdaptiveScanController:
         scan_id: int = 0,
         target_id: int = 0,
         client: Optional[httpx.AsyncClient] = None,
-        mitigation_enabled: bool = False,
+        session_user_id: Optional[str] = None,
+        target_tenant: Optional[str] = None,
     ):
         self.target_base_url = target_base_url
         self.scan_mode = scan_mode
@@ -63,7 +64,8 @@ class AdaptiveScanController:
         self.scan_id = scan_id
         self.target_id = target_id
         self.client = client
-        self.mitigation_enabled = mitigation_enabled
+        self.session_user_id = session_user_id
+        self.target_tenant = target_tenant
         self.fsm = FSMStanceClassifier()
 
         self.engines = {
@@ -117,6 +119,8 @@ class AdaptiveScanController:
             prompt_text = engine.build_prompt(
                 rule, current_strategy, session.attempts,
                 observation=session.get_last_observation(),
+                session_user_id=self.session_user_id,
+                target_tenant=self.target_tenant,
             )
 
             # 2. Send to target, collect ONLY events from target response
@@ -148,8 +152,7 @@ class AdaptiveScanController:
                 response_text=target_response_text,
                 execution_events=execution_events,
                 attack_prompt=prompt_text,
-                session_user_id="1001",
-                target_mode=self.scan_mode,
+                session_user_id=self.session_user_id,
                 target_capabilities=self.target_capabilities,
             )
 
@@ -243,16 +246,13 @@ class AdaptiveScanController:
         execution_events = []
 
         headers = {
-            "x-customer-id": "1001",
             "x-session-id": session.session_id,
-            "x-mitigation-enabled": "true" if self.mitigation_enabled else "false",
         }
 
         try:
             payload = {
                 "messages": [{"role": "user", "content": prompt_text}],
                 "prompt": prompt_text,
-                "session_user_id": "1001",
             }
             if self.client:
                 resp = await self.client.post(

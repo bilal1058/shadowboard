@@ -92,8 +92,7 @@ export function useScanStream(scanId: number) {
     }
     setEvents([]);
     setIsStreaming(true);
-    const token = localStorage.getItem('sb_api_key') || 'shadowboard_admin_secret_2026';
-    const eventSource = new EventSource(`/api/scans/${scanId}/stream?api_key=${encodeURIComponent(token)}`);
+    const eventSource = new EventSource(`/api/scans/${scanId}/stream`);
 
     eventSource.onmessage = (event) => {
       try {
@@ -119,7 +118,7 @@ export function useScanStream(scanId: number) {
   return { events, isStreaming };
 }
 
-export function useTriggerScan(targetId: number, mitigationEnabled: boolean = false) {
+export function useTriggerScan(targetId: number) {
   const [isScanning, setIsScanning] = useState(false);
   const [scanId, setScanId] = useState<number | null>(null);
 
@@ -129,7 +128,6 @@ export function useTriggerScan(targetId: number, mitigationEnabled: boolean = fa
       const result = await api.post<{ scan_id: number }>('/scans', {
         target_id: targetId,
         scan_mode: 'INSTRUMENTED',
-        mitigation_enabled: mitigationEnabled,
       });
       setScanId(result.scan_id);
       return result;

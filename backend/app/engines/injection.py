@@ -119,6 +119,7 @@ class InjectionEngine(BaseEngine):
         strategy: str,
         history: List[Dict[str, Any]],
         observation: Optional[ObservationRecord] = None,
+        **kwargs: Any,
     ) -> str:
         prompts = STRATEGY_PROMPTS.get(strategy, STRATEGY_PROMPTS["direct_instruction_override"])
         idx = len(history) % len(prompts)

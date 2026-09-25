@@ -49,8 +49,7 @@ export const ScanInspectorModal: React.FC<ScanInspectorModalProps> = ({ scanId, 
       });
 
     // Also connect to SSE stream to show live / replayed events
-    const token = localStorage.getItem('sb_api_key') || 'shadowboard_admin_secret_2026';
-    const es = new EventSource(`/api/scans/${scanId}/stream?api_key=${encodeURIComponent(token)}`);
+    const es = new EventSource(`/api/scans/${scanId}/stream`);
 
     es.onmessage = (event) => {
       try {
@@ -86,8 +85,7 @@ export const ScanInspectorModal: React.FC<ScanInspectorModalProps> = ({ scanId, 
   };
 
   const handleDownloadPdf = () => {
-    const token = localStorage.getItem('sb_api_key') || 'shadowboard_admin_secret_2026';
-    const url = `/api/scans/${scanId}/export/pdf?api_key=${encodeURIComponent(token)}`;
+    const url = `/api/scans/${scanId}/export/pdf`;
     window.open(url, '_blank');
   };
 

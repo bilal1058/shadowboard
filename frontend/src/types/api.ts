@@ -46,7 +46,6 @@ export interface Finding {
 export interface ScanRequest {
   target_id: number;
   scan_mode: string;
-  mitigation_enabled: boolean;
 }
 
 export interface SSEEvent {

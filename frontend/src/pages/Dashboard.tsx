@@ -12,16 +12,17 @@ export const DashboardPage: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<'dashboard' | 'targets' | 'history'>('dashboard');
   const [selectedTargetId, setSelectedTargetId] = useState<number>(1);
-  const [mitigationEnabled, setMitigationEnabled] = useState<boolean>(false);
+  const [mitigationEnabled, setMitigationEnabled] = useState<boolean>(true);
   const [activeScanId, setActiveScanId] = useState<number | null>(null);
   const [selectedScanModalId, setSelectedScanModalId] = useState<number | null>(null);
   const [inspectingTarget, setInspectingTarget] = useState<Target | null>(null);
-  const [apiKey, setApiKey] = useState<string>(() => localStorage.getItem('sb_api_key') || 'shadowboard_admin_secret_2026');
+  const [apiKey, setApiKey] = useState<string>('');
+  const [adminSessionActive, setAdminSessionActive] = useState<boolean>(false);
   const [apiKeyModalOpen, setApiKeyModalOpen] = useState<boolean>(false);
   const [healthStatus, setHealthStatus] = useState<'checking' | 'healthy' | 'unreachable'>('checking');
   const [targetPingResults, setTargetPingResults] = useState<Record<number, { latency: number; status: string }>>({});
 
-  const { trigger, isScanning } = useTriggerScan(selectedTargetId, mitigationEnabled);
+  const { trigger, isScanning } = useTriggerScan(selectedTargetId);
   const { events: liveEvents, isStreaming } = useScanStream(activeScanId || 0);
 
   // Check health on mount
@@ -34,18 +35,38 @@ export const DashboardPage: React.FC = () => {
       .catch(() => setHealthStatus('unreachable'));
   }, []);
 
-  const handleSaveApiKey = (key: string) => {
-    setApiKey(key);
-    if (key.trim()) {
-      api.setApiKey(key.trim());
-      toast.success('Admin API Key saved');
-    } else {
-      api.clearApiKey();
-      toast.success('Admin API Key cleared');
+  useEffect(() => {
+    if (!selectedTargetId) return;
+    api.get<{ mitigation_enabled: boolean }>(`/targets/${selectedTargetId}/mitigation`)
+      .then((config) => setMitigationEnabled(config.mitigation_enabled))
+      .catch(() => setMitigationEnabled(false));
+  }, [selectedTargetId]);
+
+  const handleMitigationChange = async (enabled: boolean) => {
+    try {
+      const config = await api.put<{ mitigation_enabled: boolean }>(
+        `/targets/${selectedTargetId}/mitigation`, { enabled }
+      );
+      setMitigationEnabled(config.mitigation_enabled);
+      toast.success(`Target mitigation ${config.mitigation_enabled ? 'enabled' : 'disabled'}`);
+    } catch (error: any) {
+      toast.error(error.message || 'Target mitigation update failed');
     }
-    setApiKeyModalOpen(false);
-    refreshTargets();
-    refreshScans();
+  };
+
+  const handleSaveApiKey = async (key: string) => {
+    if (!key.trim()) return;
+    try {
+      await api.establishBrowserSession(key.trim());
+      setApiKey('');
+      setAdminSessionActive(true);
+      setApiKeyModalOpen(false);
+      toast.success('Administrative session established');
+      refreshTargets();
+      refreshScans();
+    } catch (error: any) {
+      toast.error(error.message || 'Administrative authentication failed');
+    }
   };
 
   const handleStartScan = async () => {
@@ -166,7 +187,7 @@ export const DashboardPage: React.FC = () => {
             onClick={() => setApiKeyModalOpen(true)}
             className="px-3 py-1.5 rounded text-xs bg-[#16161e] hover:bg-[#20202c] border border-[#2b2733] text-slate-300 font-mono transition-colors"
           >
-            {apiKey ? '🔑 Key Configured' : '⚙️ Set API Key'}
+            {adminSessionActive ? '🔑 Session Active' : '⚙️ Authenticate'}
           </button>
         </div>
       </nav>
@@ -335,12 +356,12 @@ export const DashboardPage: React.FC = () => {
                         <input
                           type="checkbox"
                           checked={mitigationEnabled}
-                          onChange={(e) => setMitigationEnabled(e.target.checked)}
+                          onChange={(e) => void handleMitigationChange(e.target.checked)}
                           className="rounded bg-[#070709] border-slate-700 text-rose-600 focus:ring-0 focus:ring-offset-0"
                         />
-                        <span className="text-slate-300 font-medium">Enable Target Mitigation / Guardrails</span>
-                        <span className="text-[10px] text-slate-500 font-mono">
-                          ({mitigationEnabled ? 'Mitigated Mode' : 'Vulnerable Mode'})
+                        <span className="text-slate-300 font-medium">Target Guardrails &amp; Policy Enforcement</span>
+                        <span className="text-[10px] text-slate-400 font-mono">
+                          ({mitigationEnabled ? '🛡️ Enforced (Production Hardened)' : '⚠️ Unmitigated (Pre-Patch Baseline)'})
                         </span>
                       </label>
 
@@ -503,7 +524,7 @@ export const DashboardPage: React.FC = () => {
                                 <span>View Stream</span>
                               </button>
                               <a
-                                href={`/api/scans/${scan.id}/export/pdf?api_key=${encodeURIComponent(apiKey)}`}
+                                href={`/api/scans/${scan.id}/export/pdf`}
                                 target="_blank"
                                 rel="noreferrer"
                                 className="px-2 py-1 rounded text-[11px] font-mono bg-[#1f1b22] hover:bg-slate-700 text-slate-300 transition-colors"
@@ -763,7 +784,7 @@ export const DashboardPage: React.FC = () => {
                             Inspect & Stream
                           </button>
                           <a
-                            href={`/api/scans/${scan.id}/export/pdf?api_key=${encodeURIComponent(apiKey)}`}
+                            href={`/api/scans/${scan.id}/export/pdf`}
                             target="_blank"
                             rel="noreferrer"
                             className="px-2.5 py-1 rounded text-xs font-mono bg-[#1e1c26] hover:bg-slate-700 text-slate-300 transition-colors"

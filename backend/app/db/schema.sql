@@ -21,6 +21,12 @@ CREATE TABLE IF NOT EXISTS policies (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS target_security_config (
+    target_id INTEGER PRIMARY KEY REFERENCES targets(id) ON DELETE CASCADE,
+    mitigation_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS scan_runs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     target_id INTEGER REFERENCES targets(id) ON DELETE CASCADE,
@@ -40,6 +46,7 @@ CREATE TABLE IF NOT EXISTS scan_runs (
     error_count INTEGER DEFAULT 0,
     not_applicable_count INTEGER DEFAULT 0,
     policy_coverage REAL DEFAULT 0.0,
+    tenant_matrix_json TEXT DEFAULT '[]',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

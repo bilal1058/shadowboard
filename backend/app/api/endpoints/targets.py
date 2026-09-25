@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 import json
 import aiosqlite
+import httpx
 from typing import Optional
+from urllib.parse import urlparse
 from pydantic import BaseModel, HttpUrl
 from app.db.session import get_db
 from app.schemas.target import TargetContract, TargetResponse
@@ -28,10 +30,14 @@ class ConnectionCheckRequest(BaseModel):
     base_url: str
     allow_local: bool = False
 
+def _is_exact_local_reference(base_url: str) -> bool:
+    parsed = urlparse(base_url)
+    return parsed.hostname in {"127.0.0.1", "localhost"} and parsed.port == 8000 and parsed.path in {"/target-app", "/internal-rag"}
+
 @router.post("/test-connection")
 async def test_connection(request: ConnectionCheckRequest):
     """Validate a target by reading its real health and contract endpoints with SSRF protections."""
-    is_local_ref = "127.0.0.1:8000" in request.base_url or "localhost:8000" in request.base_url
+    is_local_ref = _is_exact_local_reference(request.base_url)
     effective_allow_local = request.allow_local or is_local_ref
     try:
         validated_base = validate_target_url(request.base_url, allow_local=effective_allow_local)
@@ -49,7 +55,7 @@ async def test_connection(request: ConnectionCheckRequest):
 @router.post("", response_model=TargetResponse)
 async def create_target(target: TargetContract, db: aiosqlite.Connection = Depends(get_db)):
     # Local reference targets built into ShadowBoard are allowed loopback
-    is_local_ref = "127.0.0.1:8000" in target.base_url or "localhost:8000" in target.base_url
+    is_local_ref = _is_exact_local_reference(target.base_url)
     try:
         validated_base = validate_target_url(target.base_url, allow_local=is_local_ref)
     except SSRFValidationError as exc:

@@ -99,6 +99,12 @@ async def lifespan(app: FastAPI):
                         "INSERT INTO policies (target_id, policy_json, taxonomy, taxonomy_version) VALUES (?, ?, ?, ?)",
                         (target_id, json.dumps(default_policy_for_target_type(target["target_type"])), "OWASP", "2025"),
                     )
+                # The control plane owns this setting; scans only record its snapshot.
+                await db.execute(
+                    "INSERT INTO target_security_config (target_id, mitigation_enabled) VALUES (?, TRUE) "
+                    "ON CONFLICT(target_id) DO NOTHING",
+                    (target_id,),
+                )
             await db.commit()
             logger.info("Reference targets registered")
         except Exception as e:
@@ -207,9 +213,6 @@ async def serve_spa(full_path: str = ""):
     return HTMLResponse(content="<h1>ShadowBoard Security Engine Active</h1><p>API docs at <a href='/docs'>/docs</a></p>")
 
 if __name__ == "__main__":
-    if not os.getenv("SHADOWBOARD_ADMIN_KEY") and not os.getenv("SHADOWBOARD_API_KEY"):
-        os.environ["SHADOWBOARD_ADMIN_KEY"] = "shadowboard_admin_secret_2026"
-        logger.info("SHADOWBOARD_ADMIN_KEY defaulted to 'shadowboard_admin_secret_2026' for local development")
     import uvicorn
     uvicorn.run(
         "main:app",

@@ -21,7 +21,7 @@ class EvaluateRequest(BaseModel):
     yaml_content: str
     response_text: str
     execution_events: List[Dict[str, Any]] = []
-    session_user_id: str = "1001"
+    session_user_id: str = "usr_authenticated_tenant"
     target_mode: str = "INSTRUMENTED"
 
 

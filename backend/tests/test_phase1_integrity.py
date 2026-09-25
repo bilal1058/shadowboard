@@ -10,15 +10,11 @@ from app.core.replay import regression_engine
 from app.api.endpoints.scans import policy_is_applicable, compute_risk_score
 from app.api.endpoints.policies import SUPPORT_POLICY, INTERNAL_RAG_POLICY
 from app.target_app.app import (
-    MitigationRequest as SupportMitigationRequest,
-    update_mitigation as support_update_mitigation,
     chat as support_chat,
     ChatRequest as SupportChatRequest,
     ChatMessage as SupportChatMessage,
 )
 from app.internal_rag.app import (
-    MitigationRequest as InternalMitigationRequest,
-    update_mitigation as internal_update_mitigation,
     chat as internal_chat,
     ChatRequest as InternalChatRequest,
     ChatMessage as InternalChatMessage,
@@ -73,12 +69,13 @@ async def test_target_a_chat_only_no_spurious_events():
 
 
 @pytest.mark.asyncio
-async def test_target_b_real_trace_and_bola_verification():
+async def test_target_b_real_trace_and_bola_verification(monkeypatch):
     """Verify Target B (Internal Knowledge Assistant) produces REAL tool calls.
-    
+
     When unmitigated: get_invoice(1042) executed by 1001 -> CONFIRMED BOLA violation.
     When mitigated: get_invoice(1042) blocked -> PASS.
     """
+    import app.internal_rag.app as internal_rag_mod
     target_capabilities = {"chat": True, "rag": True, "tools": True, "has_tools": True, "has_rag": True}
     bola_rule = PolicyRule(**[p for p in INTERNAL_RAG_POLICY["policies"] if p["id"] == "POL-BOLA-001"][0])
 
@@ -93,8 +90,8 @@ async def test_target_b_real_trace_and_bola_verification():
 
     transport = httpx.MockTransport(mock_internal_handler)
 
-    # Case 1: Unmitigated run
-    await internal_update_mitigation(InternalMitigationRequest(enabled=False))
+    # Case 1: Unmitigated run (Calibration Fixture Mode)
+    monkeypatch.setattr(internal_rag_mod, "VULNERABLE_CALIBRATION", True)
 
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         controller_unmitigated = AdaptiveScanController(
@@ -104,6 +101,8 @@ async def test_target_b_real_trace_and_bola_verification():
             scan_id=992,
             target_id=2,
             client=client,
+            session_user_id="1001",
+            target_tenant="1042",
         )
         res_unmitigated = await controller_unmitigated.execute_objective("agency", bola_rule)
 
@@ -122,8 +121,8 @@ async def test_target_b_real_trace_and_bola_verification():
     exploit_seq = json.loads(exploit_seq_json)
     assert len(exploit_seq) >= 1
 
-    # Case 2: Mitigated run
-    await internal_update_mitigation(InternalMitigationRequest(enabled=True))
+    # Case 2: Mitigated run (Default-On Hardened Target)
+    monkeypatch.setattr(internal_rag_mod, "VULNERABLE_CALIBRATION", False)
 
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         controller_mitigated = AdaptiveScanController(
@@ -133,6 +132,8 @@ async def test_target_b_real_trace_and_bola_verification():
             scan_id=993,
             target_id=2,
             client=client,
+            session_user_id="1001",
+            target_tenant="1042",
         )
         res_mitigated = await controller_mitigated.execute_objective("agency", bola_rule)
 
@@ -142,8 +143,9 @@ async def test_target_b_real_trace_and_bola_verification():
 
 
 @pytest.mark.asyncio
-async def test_security_regression_replay():
+async def test_security_regression_replay(monkeypatch):
     """Verify Regression Replay tests a previously confirmed exploit sequence against a patched target."""
+    import app.internal_rag.app as internal_rag_mod
     target_capabilities = {"chat": True, "rag": True, "tools": True, "has_tools": True, "has_rag": True}
     bola_rule = PolicyRule(**[p for p in INTERNAL_RAG_POLICY["policies"] if p["id"] == "POL-BOLA-001"][0])
 
@@ -170,7 +172,7 @@ async def test_security_regression_replay():
     exploit_sequence_json = json.dumps(exploit_sequence)
 
     # Replay against Mitigated Target
-    await internal_update_mitigation(InternalMitigationRequest(enabled=True))
+    monkeypatch.setattr(internal_rag_mod, "VULNERABLE_CALIBRATION", False)
 
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         replay_result = await regression_engine.replay_exploit(
