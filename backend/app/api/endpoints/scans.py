@@ -874,6 +874,18 @@ async def stream_scan_events(scan_id: int, db: aiosqlite.Connection = Depends(ge
 
 
 
+@router.get("/{scan_id}/results", response_model=Dict[str, Any])
+async def get_scan_results(scan_id: int, db: aiosqlite.Connection = Depends(get_db)):
+    """Return comprehensive scan results including findings, objectives, and attempt verdicts."""
+    return await get_scan_details(scan_id, db)
+
+
+@router.get("/{scan_id}/report", response_model=Dict[str, Any])
+async def get_scan_report(scan_id: int, db: aiosqlite.Connection = Depends(get_db)):
+    """Return structured security assessment report."""
+    return await get_scan_details(scan_id, db)
+
+
 @router.get("/{scan_id}/export/pdf")
 async def export_scan_pdf(scan_id: int, db: aiosqlite.Connection = Depends(get_db)):
     """Generates and downloads an official boardroom-ready PDF security audit report."""

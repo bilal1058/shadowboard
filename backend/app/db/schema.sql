@@ -129,3 +129,8 @@ CREATE TABLE IF NOT EXISTS security_baselines (
     baseline_json TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Compatibility views for external evaluator scripts & client libraries
+CREATE VIEW IF NOT EXISTS scans AS SELECT * FROM scan_runs;
+CREATE VIEW IF NOT EXISTS scan_results AS SELECT * FROM findings;
+

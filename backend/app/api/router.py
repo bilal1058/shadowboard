@@ -11,6 +11,7 @@ from app.api.endpoints import (
     evidence,
     integrations,
     auth_session,
+    reports,
 )
 
 api_router = APIRouter(prefix="/api")
@@ -26,6 +27,7 @@ api_router.include_router(targets.router)
 api_router.include_router(policies.router)
 api_router.include_router(scans.router)
 api_router.include_router(findings.router)
+api_router.include_router(reports.router)
 
 # Enterprise AI Assurance platform endpoints
 api_router.include_router(policy_as_code.router)

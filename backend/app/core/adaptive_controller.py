@@ -121,6 +121,7 @@ class AdaptiveScanController:
                 observation=session.get_last_observation(),
                 session_user_id=self.session_user_id,
                 target_tenant=self.target_tenant,
+                target_capabilities=self.target_capabilities,
             )
 
             # 2. Send to target, collect ONLY events from target response

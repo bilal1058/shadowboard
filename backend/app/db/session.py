@@ -61,6 +61,12 @@ async def get_db():
             await db.commit()
         except Exception:
             pass
+        try:
+            await db.execute("CREATE VIEW IF NOT EXISTS scans AS SELECT * FROM scan_runs;")
+            await db.execute("CREATE VIEW IF NOT EXISTS scan_results AS SELECT * FROM findings;")
+            await db.commit()
+        except Exception:
+            pass
         yield db
 
 

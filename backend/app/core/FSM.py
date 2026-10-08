@@ -273,7 +273,15 @@ class FSMStanceClassifier:
         self, prompt: str, response: str, execution_events: list
     ) -> Optional[TargetStanceEvaluation]:
         """Use Qwen-Flash for stance classification with forced JSON schema."""
-        url = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+        custom_base = os.getenv("DASHSCOPE_BASE_URL", "").rstrip("/")
+        if custom_base:
+            endpoints = [f"{custom_base}/chat/completions" if not custom_base.endswith("/chat/completions") else custom_base]
+        else:
+            endpoints = [
+                "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions",
+                "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+            ]
+
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
@@ -304,20 +312,24 @@ class FSMStanceClassifier:
             },
         ]
         async with httpx.AsyncClient(timeout=10.0) as client:
-            res = await client.post(
-                url,
-                headers=headers,
-                json={
-                    "model": "qwen-flash",
-                    "messages": messages,
-                    "temperature": 0.1,
-                    "response_format": {"type": "json_object"},
-                },
-            )
-            if res.status_code == 200:
-                content = res.json()["choices"][0]["message"]["content"]
-                parsed = json.loads(content)
-                return TargetStanceEvaluation(**parsed)
+            for url in endpoints:
+                try:
+                    res = await client.post(
+                        url,
+                        headers=headers,
+                        json={
+                            "model": "qwen-flash",
+                            "messages": messages,
+                            "temperature": 0.1,
+                            "response_format": {"type": "json_object"},
+                        },
+                    )
+                    if res.status_code == 200:
+                        content = res.json()["choices"][0]["message"]["content"]
+                        parsed = json.loads(content)
+                        return TargetStanceEvaluation(**parsed)
+                except Exception:
+                    continue
         return None
 
     def _heuristic_evaluate(
