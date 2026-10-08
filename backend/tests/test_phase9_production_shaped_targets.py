@@ -65,6 +65,14 @@ async def test_9_1_mitigation_endpoints_deleted():
         assert r_put_tp.status_code in (404, 405)
 
 
+def test_9_1_scan_request_cannot_alter_mitigation_posture():
+    """Verify ScanCreateRequest schema has no mitigation_enabled field,
+    ensuring security posture remains server/target-governed and cannot be controlled by scanner clients.
+    """
+    from app.schemas.scan import ScanCreateRequest
+    assert "mitigation_enabled" not in ScanCreateRequest.model_fields
+
+
 @pytest.mark.asyncio
 async def test_9_1_x_mitigation_enabled_header_ignored():
     """Verify x-mitigation-enabled header cannot disable security on targets."""

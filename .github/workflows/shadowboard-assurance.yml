@@ -20,6 +20,10 @@ jobs:
   security-assurance:
     name: Autonomous AI Agent Security Assessment & Hygiene
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
 
     steps:
       - name: Checkout Code

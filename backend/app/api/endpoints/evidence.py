@@ -74,13 +74,24 @@ def revoke_signing_key(key_id: str, request: RevokeKeyRequest = RevokeKeyRequest
         raise HTTPException(status_code=404, detail=f"Key ID '{key_id}' not found in registry")
 
 
+def _lookup_policy_rule_name(rule_id: str, fallback_objective: Optional[str] = None) -> str:
+    """Resolves authentic immutable policy rule name from registered security policies."""
+    from app.api.endpoints.policies import SUPPORT_POLICY, INTERNAL_RAG_POLICY
+    for p in SUPPORT_POLICY.get("policies", []) + INTERNAL_RAG_POLICY.get("policies", []):
+        if p.get("id") == rule_id:
+            return p.get("name", rule_id)
+    if fallback_objective and fallback_objective.strip():
+        return fallback_objective.strip()
+    return f"Policy Assertion: {rule_id}"
+
+
 @router.get("/{finding_id}/package")
 async def get_evidence_package(finding_id: str, db: aiosqlite.Connection = Depends(get_db)):
     """Generates and returns an independently verifiable cryptographic evidence package for a finding."""
     cursor = await db.execute(
         """
         SELECT f.scan_id, f.finding_id, f.owasp_category, f.status, f.severity, f.remediation, f.evidence_json, f.evidence_hash,
-               s.target_id, t.name, t.target_mode, f.objective_id, ao.policy_rule_id
+               s.target_id, t.name, t.target_mode, f.objective_id, ao.policy_rule_id, ao.objective
         FROM findings f
         JOIN scan_runs s ON f.scan_id = s.id
         JOIN targets t ON s.target_id = t.id
@@ -105,6 +116,8 @@ async def get_evidence_package(finding_id: str, db: aiosqlite.Connection = Depen
     target_mode = row[10]
     objective_id = row[11] if len(row) > 11 else None
     rule_id = row[12] if len(row) > 12 and row[12] else finding_id
+    ao_objective = row[13] if len(row) > 13 else None
+    actual_rule_name = _lookup_policy_rule_name(rule_id, ao_objective)
 
     # Fetch attempts strictly matching the finding's objective provenance
     if objective_id:
@@ -160,7 +173,7 @@ async def get_evidence_package(finding_id: str, db: aiosqlite.Connection = Depen
         target_name=target_name,
         finding_id=finding_id,
         rule_id=rule_id,
-        rule_name=f"Policy Assertion: {rule_id}",
+        rule_name=actual_rule_name,
         severity=severity,
         owasp_category=owasp_cat,
         attack_prompts=prompts,

@@ -4,11 +4,13 @@ Real Evidence Cryptography, Binary Merkle Trees, and Key Registry PKI.
 
 import pytest
 import json
+import hashlib
 import tempfile
 from pathlib import Path
 from cryptography.hazmat.primitives.asymmetric import ed25519
 from cryptography.hazmat.primitives import serialization
 
+from app.core.config import settings
 from app.evidence.merkle import MerkleTree
 from app.evidence.key_registry import KeyRegistry, KeyRecord, reset_key_registry, get_active_key_registry
 from app.evidence.bundler import EvidenceBundler
@@ -564,3 +566,94 @@ def test_untrusted_signer_key_rejected_by_default():
         mode="CRYPTOGRAPHIC_ONLY",
     )
     assert valid_crypto is True
+
+
+def test_production_key_registry_initialization(tmp_path, monkeypatch):
+    """Test KeyRegistry initialization in simulated production environment.
+    Verifies that import sys is present and fail-closed key loading functions properly.
+    """
+    key_file = tmp_path / "prod_key.pem"
+    meta_file = tmp_path / "keyring_meta.json"
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setattr(settings, "APP_ENV", "production")
+    monkeypatch.setattr(settings, "SIGNING_KEY_PATH", str(key_file))
+
+    # Initial creation in production
+    reg1 = KeyRegistry(key_store_path=str(meta_file))
+    active_key1 = reg1.get_active_key()
+    assert active_key1 is not None
+    active_kid = active_key1.key_id
+    pubkey1 = active_key1.public_key_hex
+
+    # Second initialization reloads the identical persistent key
+    reg2 = KeyRegistry(key_store_path=str(meta_file))
+    active_key2 = reg2.get_active_key()
+    assert active_key2.key_id == active_kid
+    assert active_key2.public_key_hex == pubkey1
+
+
+def test_legacy_verification_mode_explicit_only():
+    """Verify that legacy 4-field payload signatures are NOT silently accepted under default mode."""
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+    key = ed25519.Ed25519PrivateKey.generate()
+    pub_hex = key.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw
+    ).hex()
+
+    # Craft a package with old legacy 4-field signature
+    manifest_data = {
+        "pkg_id": "SBEV-LEGACY-01",
+        "scan_id": 1,
+        "target_id": 1,
+        "rule_id": "R1",
+        "finding_id": "F1",
+    }
+    manifest_hash = StandaloneVerifier.canonical_hash(manifest_data)
+    event_hash = hashlib.sha256(b"EMPTY_TRACE").hexdigest()
+    resp_text = "Target response"
+    resp_hash = hashlib.sha256(resp_text.encode("utf-8")).hexdigest()
+    legacy_payload = {
+        "manifest_hash": manifest_hash,
+        "event_chain_hash": event_hash,
+        "response_hash": resp_hash,
+        "violation": {},
+    }
+    legacy_hash = StandaloneVerifier.canonical_hash(legacy_payload)
+    legacy_sig = key.sign(legacy_hash.encode("utf-8")).hex()
+
+    reg = KeyRegistry()
+    reg._register_private_key("legacy_key", key)
+
+    pkg = {
+        "package_id": "SBEV-LEGACY-01",
+        "scan_id": 1,
+        "target_id": 1,
+        "target_name": "Target",
+        "finding_id": "F1",
+        "rule_id": "R1",
+        "rule_name": "Rule",
+        "severity": "HIGH",
+        "owasp_category": "LLM01",
+        "response_text": resp_text,
+        "execution_events": [],
+        "violation_details": {},
+        "substrate_truth_level": "TARGET_INSTRUMENTED",
+        "proof": {
+            "manifest_hash": manifest_hash,
+            "event_chain_hash": event_hash,
+            "signature_ed25519_hex": legacy_sig,
+            "signer_public_key_hex": pub_hex,
+            "key_id": "legacy_key",
+            "substrate_truth_level": "TARGET_INSTRUMENTED",
+        }
+    }
+
+    # Default TRUSTED_SIGNER mode rejects because the entire package claims were not signed
+    valid_default, msg_default, _ = StandaloneVerifier.verify_package(pkg, key_registry=reg, mode="TRUSTED_SIGNER")
+    assert valid_default is False
+    assert "Invalid Ed25519 digital signature" in msg_default
+
+    # Explicit LEGACY_V1 mode accepts the legacy 4-field payload
+    valid_legacy, _, _ = StandaloneVerifier.verify_package(pkg, key_registry=reg, mode="LEGACY_V1")
+    assert valid_legacy is True

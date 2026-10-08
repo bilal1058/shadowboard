@@ -25,11 +25,18 @@ COPY --from=builder /install /usr/local
 COPY backend /app/backend
 COPY frontend /app/frontend
 
+RUN groupadd -r -g 1001 shadowboard && \
+    useradd -r -u 1001 -g shadowboard -m -d /home/shadowboard shadowboard && \
+    chown -R shadowboard:shadowboard /app
+
 ENV PYTHONPATH=/app/backend
 ENV PORT=8000
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV APP_ENV=production
+ENV WORKERS=1
+
+USER shadowboard
 
 EXPOSE 8000
 

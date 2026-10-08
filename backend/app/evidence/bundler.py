@@ -11,6 +11,7 @@ from typing import Dict, Any, List, Optional
 import hashlib
 import json
 import time
+import uuid
 from pydantic import BaseModel, Field
 from cryptography.hazmat.primitives.asymmetric import ed25519
 from cryptography.hazmat.primitives import serialization
@@ -116,7 +117,7 @@ class EvidenceBundler:
         key_id: Optional[str] = None,
         substrate_truth_level: str = "TARGET_INSTRUMENTED",
     ) -> EvidencePackage:
-        pkg_id = f"SBEV-{int(time.time())}-{finding_id[-8:]}"
+        pkg_id = f"SBEV-{int(time.time())}-{uuid.uuid4().hex[:8]}-{finding_id[-8:]}"
 
         # 1. Compute Integrity Hashes (Linear Merkle chain + Binary Merkle tree root)
         event_chain_hash = compute_event_chain_hash(execution_events)

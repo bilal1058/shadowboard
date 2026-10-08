@@ -59,9 +59,20 @@ async def create_target(target: TargetContract, db: aiosqlite.Connection = Depen
     except SSRFValidationError as exc:
         raise HTTPException(status_code=400, detail=f"SSRF validation blocked target URL: {exc}")
 
+    # Authoritative capability discovery: probe target's /contract if reachable
+    capabilities_dict = target.capabilities.model_dump()
+    try:
+        contract_data = await safe_http_get_json(f"{validated_base}/contract", allow_local=is_local_ref)
+        if isinstance(contract_data, dict) and "capabilities" in contract_data:
+            observed_caps = contract_data["capabilities"]
+            if isinstance(observed_caps, dict):
+                capabilities_dict = observed_caps
+    except Exception:
+        pass
+
     cursor = await db.execute(
         "INSERT INTO targets (name, base_url, model_name, target_type, target_mode, capabilities_json) VALUES (?, ?, ?, ?, ?, ?)",
-        (target.name, validated_base, target.model_name, target.target_type, target.target_mode, json.dumps(target.capabilities.model_dump()))
+        (target.name, validated_base, target.model_name, target.target_type, target.target_mode, json.dumps(capabilities_dict))
     )
     target_id = cursor.lastrowid
     from app.api.endpoints.policies import default_policy_for_target_type

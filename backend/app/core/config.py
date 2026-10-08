@@ -25,7 +25,7 @@ class Settings(BaseSettings):
 
     HOST: str = "0.0.0.0"
     PORT: int = 8000
-    WORKERS: int = Field(default=4, ge=1, le=32)
+    WORKERS: int = Field(default=1, ge=1, le=32)
 
     DATABASE_URL: str = Field(default="sqlite:///backend/shadowboard.db", alias="DATABASE_URL")
     USE_POSTGRES: bool = False

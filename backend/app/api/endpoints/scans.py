@@ -467,26 +467,17 @@ async def trigger_scan(
                 headers={"Retry-After": "5"},
             )
 
-        # Authoritative target security configuration snapshot
-        mitigation_on = False
-        if req.mitigation_enabled is not None:
-            mitigation_on = bool(req.mitigation_enabled)
-            await db.execute(
-                "INSERT INTO target_security_config (target_id, mitigation_enabled) VALUES (?, ?) "
-                "ON CONFLICT(target_id) DO UPDATE SET mitigation_enabled = excluded.mitigation_enabled",
-                (req.target_id, mitigation_on),
-            )
+        # Authoritative target security configuration snapshot (server-governed, non-client-controllable)
+        cfg_cur = await db.execute(
+            "SELECT mitigation_enabled FROM target_security_config WHERE target_id = ?",
+            (req.target_id,),
+        )
+        cfg_row = await cfg_cur.fetchone()
+        if cfg_row is not None:
+            mitigation_on = bool(cfg_row[0])
         else:
-            cfg_cur = await db.execute(
-                "SELECT mitigation_enabled FROM target_security_config WHERE target_id = ?",
-                (req.target_id,),
-            )
-            cfg_row = await cfg_cur.fetchone()
-            if cfg_row is not None:
-                mitigation_on = bool(cfg_row[0])
-            else:
-                # Target 2 is hardened Meridian Assistant by default; Target 1 is vulnerable fixture
-                mitigation_on = True if req.target_id == 2 else False
+            # Baseline targets: Target 2 is hardened Meridian Agent; Target 1 is calibration fixture
+            mitigation_on = True if req.target_id == 2 else False
 
         cursor = await db.execute(
             "INSERT INTO scan_runs (target_id, scan_mode, mitigation_enabled, status) VALUES (?, ?, ?, ?)",

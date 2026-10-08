@@ -10,6 +10,7 @@ Provides:
 
 from typing import Dict, Any, List, Optional, Tuple
 import os
+import sys
 import json
 import time
 import uuid
@@ -141,10 +142,15 @@ class KeyRegistry:
                 f.write(pem_bytes)
             self._register_private_key(key_id, fallback_key, description="Instance default persistent key")
             return
-        except Exception:
-            # Ephemeral in-memory key only if environment filesystem is non-writable
-            ephemeral_key = ed25519.Ed25519PrivateKey.generate()
-            self._register_private_key(key_id, ephemeral_key, description="Ephemeral memory key")
+        except Exception as exc:
+            # Ephemeral in-memory key only if test/dev environment where persistent filesystem is mocked/read-only
+            if self._is_test_env() or settings.APP_ENV.lower() in ("test", "development", "dev"):
+                ephemeral_key = ed25519.Ed25519PrivateKey.generate()
+                self._register_private_key(key_id, ephemeral_key, description="Ephemeral memory key (test/dev only)")
+            else:
+                raise RuntimeError(
+                    f"Startup Failure: Persistent signing key storage unavailable in {settings.APP_ENV} environment: {exc}"
+                )
 
     def _register_private_key(
         self,
@@ -186,6 +192,16 @@ class KeyRegistry:
             self._initialize_from_config()
         key_id = self._active_key_id or "sb_key_primary"
         return self._private_keys[key_id], key_id
+
+    def get_active_key_id(self) -> str:
+        """Returns the key_id of the active signing key."""
+        _, kid = self.get_active_signing_key()
+        return kid
+
+    def get_active_key(self) -> Optional[KeyRecord]:
+        """Returns the KeyRecord for the currently active signing key."""
+        kid = self.get_active_key_id()
+        return self.get_key(kid)
 
     def get_key(self, key_id: str) -> Optional[KeyRecord]:
         """Retrieves public key record by key_id."""

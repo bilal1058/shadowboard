@@ -170,11 +170,8 @@ class StandaloneVerifier:
             try:
                 public_key = ed25519.Ed25519PublicKey.from_public_bytes(bytes.fromhex(pubkey_hex))
                 sig_bytes = bytes.fromhex(sig_ed25519_hex)
-                try:
-                    # Verify that the entire canonical package claims hash was signed
-                    public_key.verify(sig_bytes, recomputed_canonical_hash.encode("utf-8"))
-                except InvalidSignature:
-                    # Fallback check for legacy 4-field payload for backwards compatibility
+                if effective_mode == "LEGACY_V1":
+                    # Explicit legacy verification mode for historical 4-field payloads
                     response_text = pkg_data.get("response_text", "")
                     legacy_payload = {
                         "manifest_hash": recomputed_manifest_hash,
@@ -184,6 +181,9 @@ class StandaloneVerifier:
                     }
                     legacy_hash = cls.canonical_hash(legacy_payload)
                     public_key.verify(sig_bytes, legacy_hash.encode("utf-8"))
+                else:
+                    # Strict verification: canonical full-claims hash must match signature
+                    public_key.verify(sig_bytes, recomputed_canonical_hash.encode("utf-8"))
             except (InvalidSignature, ValueError) as exc:
                 return False, f"Authenticity Failure: Invalid Ed25519 digital signature! Tampered payload detected or signature mismatch ({exc}).", {}
         elif legacy_sig and recomputed_canonical_hash != legacy_sig:
