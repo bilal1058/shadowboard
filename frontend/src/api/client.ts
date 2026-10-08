@@ -6,18 +6,24 @@ export class ApiClient {
 
   constructor(baseUrl: string = BASE_URL) {
     this.baseUrl = baseUrl;
-    this.apiKey = null;
+    this.apiKey = typeof window !== 'undefined' ? localStorage.getItem('sb_admin_key') : null;
+  }
+
+  getApiKey(): string | null {
+    return this.apiKey;
   }
 
   setApiKey(key: string) {
     this.apiKey = key;
     if (typeof window !== 'undefined') {
+      localStorage.setItem('sb_admin_key', key);
     }
   }
 
   clearApiKey() {
     this.apiKey = null;
     if (typeof window !== 'undefined') {
+      localStorage.removeItem('sb_admin_key');
     }
   }
 
@@ -73,12 +79,12 @@ export class ApiClient {
       credentials: 'same-origin',
     });
     if (!response.ok) throw new Error('Administrative authentication failed.');
-    this.apiKey = null;
+    this.setApiKey(key);
   }
 
   async destroyBrowserSession(): Promise<void> {
     await fetch(`${this.baseUrl}/auth/session`, { method: 'DELETE', credentials: 'same-origin' });
-    this.apiKey = null;
+    this.clearApiKey();
   }
 }
 

@@ -1,7 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { api } from '@/api/client';
 import { Target } from '@/types/api';
-import toast from 'react-hot-toast';
 
 interface TargetInspectorModalProps {
   target: Target | null;
@@ -14,30 +13,13 @@ export const TargetInspectorModal: React.FC<TargetInspectorModalProps> = ({
   onClose,
   onSelectForScan,
 }) => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'test' | 'documents' | 'sandbox'>('overview');
-  const [testResult, setTestResult] = useState<any>(null);
-  const [isTesting, setIsTesting] = useState(false);
-  const [documents, setDocuments] = useState<any[]>([]);
-  const [loadingDocs, setLoadingDocs] = useState(false);
-
+  const [activeTab, setActiveTab] = useState<'sandbox' | 'overview'>('sandbox');
   // Interactive Sandbox Chat State
   const [chatMessages, setChatMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string; latency?: number; verdict?: string; stance?: string }>>([
     { role: 'assistant', content: 'Hello! I am ready to test. Send a prompt to verify my operational boundaries and responses.' }
   ]);
-  const [sandboxMitigation, setSandboxMitigation] = useState(true);
   const [promptInput, setPromptInput] = useState('');
   const [isSending, setIsSending] = useState(false);
-
-  useEffect(() => {
-    if (!target) return;
-    setTestResult(null);
-
-    // If target has RAG, pre-load document catalog
-    const caps: any = target.capabilities || {};
-    if (caps.rag || target.target_type === 'INTERNAL_RAG' || target.base_url.includes('internal-rag')) {
-      loadDocuments();
-    }
-  }, [target]);
 
   if (!target) return null;
 
@@ -46,43 +28,6 @@ export const TargetInspectorModal: React.FC<TargetInspectorModalProps> = ({
   const hasTools = Boolean(caps.tools || (caps.tool_names && caps.tool_names.length > 0));
   const toolNames: string[] = caps.tool_names || [];
 
-  const handleTestConnection = async () => {
-    setIsTesting(true);
-    setTestResult(null);
-    try {
-      const t0 = performance.now();
-      const res = await api.post<any>('/targets/test-connection', {
-        base_url: target.base_url,
-      });
-      const t1 = performance.now();
-      setTestResult({
-        success: true,
-        latency: Math.round(t1 - t0),
-        data: res,
-      });
-      toast.success(`Target responded in ${Math.round(t1 - t0)}ms`);
-    } catch (err: any) {
-      setTestResult({
-        success: false,
-        error: err.message || 'Connection failed',
-      });
-      toast.error('Connection check failed');
-    } finally {
-      setIsTesting(false);
-    }
-  };
-
-  const loadDocuments = async () => {
-    setLoadingDocs(true);
-    try {
-      const res = await api.get<any>(`/targets/${target.id}/documents`);
-      setDocuments(res.documents || []);
-    } catch (err) {
-      console.error('Failed to load target documents:', err);
-    } finally {
-      setLoadingDocs(false);
-    }
-  };
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -99,7 +44,7 @@ export const TargetInspectorModal: React.FC<TargetInspectorModalProps> = ({
       const res = await api.post<any>('/scans/sandbox/probe', {
         target_id: target.id,
         prompt: userMsg,
-        mitigation_enabled: sandboxMitigation,
+        mitigation_enabled: true,
       });
       const t1 = performance.now();
       const replyText = res.response_text || res.reply || res.response || JSON.stringify(res);
@@ -118,9 +63,10 @@ export const TargetInspectorModal: React.FC<TargetInspectorModalProps> = ({
       // Resilient fallback to direct target chat if backend probe fails
       try {
         const t0 = performance.now();
-        let chatEndpoint = `${target.base_url}/chat`;
-        if (target.base_url.startsWith('/')) {
-          chatEndpoint = `${window.location.origin}${target.base_url}/chat`;
+        const cleanBase = target.base_url.replace(/\/+$/, '');
+        let chatEndpoint = `${cleanBase}/chat`;
+        if (cleanBase.startsWith('/')) {
+          chatEndpoint = `${window.location.origin}${cleanBase}/chat`;
         }
         const response = await fetch(chatEndpoint, {
           method: 'POST',
@@ -147,7 +93,12 @@ export const TargetInspectorModal: React.FC<TargetInspectorModalProps> = ({
       } catch (fallbackErr: any) {
         setChatMessages((prev) => [
           ...prev,
-          { role: 'assistant', content: `[Error: ${err.message || fallbackErr.message || 'Target communication failed'}]` },
+          {
+            role: 'assistant',
+            content: `[Target Communication Notice: ${err.message || fallbackErr.message || 'Target endpoint unreachable'}]`,
+            verdict: 'ERROR',
+            stance: 'ERROR',
+          },
         ]);
       }
     } finally {
@@ -194,14 +145,16 @@ export const TargetInspectorModal: React.FC<TargetInspectorModalProps> = ({
                 Select for Assessment
               </button>
             )}
-            <a
-              href={target.base_url}
-              target="_blank"
-              rel="noreferrer"
-              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#1a1a24] hover:bg-[#252533] border border-[#332f3f] text-slate-300 transition-colors"
-            >
-              Open Web App ↗
-            </a>
+            {target.base_url.startsWith('http') && !target.base_url.includes('127.0.0.1') && !target.base_url.includes('localhost') && (
+              <a
+                href={target.base_url.replace(/\/+$/, '') + '/'}
+                target="_blank"
+                rel="noreferrer"
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#1a1a24] hover:bg-[#252533] border border-[#332f3f] text-slate-300 transition-colors"
+              >
+                Open External App ↗
+              </a>
+            )}
             <button
               onClick={onClose}
               className="w-8 h-8 rounded-lg bg-[#1a1a24] hover:bg-[#252533] border border-[#332f3f] text-slate-400 hover:text-white flex items-center justify-center transition-colors text-sm"
@@ -214,44 +167,6 @@ export const TargetInspectorModal: React.FC<TargetInspectorModalProps> = ({
         {/* Tab Navigation */}
         <div className="flex border-b border-[#23202b] bg-[#12121a] px-5">
           <button
-            onClick={() => setActiveTab('overview')}
-            className={`py-3 px-4 text-xs font-semibold border-b-2 transition-all flex items-center space-x-2 ${
-              activeTab === 'overview'
-                ? 'border-indigo-500 text-indigo-400 bg-indigo-950/10'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <span>⚙️</span>
-            <span>Target Specifications</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('test')}
-            className={`py-3 px-4 text-xs font-semibold border-b-2 transition-all flex items-center space-x-2 ${
-              activeTab === 'test'
-                ? 'border-indigo-500 text-indigo-400 bg-indigo-950/10'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <span>⚡</span>
-            <span>Live Health & Connectivity</span>
-          </button>
-
-          {hasRag && (
-            <button
-              onClick={() => setActiveTab('documents')}
-              className={`py-3 px-4 text-xs font-semibold border-b-2 transition-all flex items-center space-x-2 ${
-                activeTab === 'documents'
-                  ? 'border-indigo-500 text-indigo-400 bg-indigo-950/10'
-                  : 'border-transparent text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <span>📚</span>
-              <span>Knowledge Base Documents ({documents.length})</span>
-            </button>
-          )}
-
-          <button
             onClick={() => setActiveTab('sandbox')}
             className={`py-3 px-4 text-xs font-semibold border-b-2 transition-all flex items-center space-x-2 ${
               activeTab === 'sandbox'
@@ -261,6 +176,18 @@ export const TargetInspectorModal: React.FC<TargetInspectorModalProps> = ({
           >
             <span>💬</span>
             <span>Interactive Chat Sandbox</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('overview')}
+            className={`py-3 px-4 text-xs font-semibold border-b-2 transition-all flex items-center space-x-2 ${
+              activeTab === 'overview'
+                ? 'border-indigo-500 text-indigo-400 bg-indigo-950/10'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <span>⚙️</span>
+            <span>Target Specifications</span>
           </button>
         </div>
 
@@ -304,13 +231,9 @@ export const TargetInspectorModal: React.FC<TargetInspectorModalProps> = ({
                       <span className="text-slate-400">Base URL:</span>
                       <span className="font-mono text-slate-300 truncate max-w-[200px]">{target.base_url}</span>
                     </div>
-                    <div className="flex justify-between py-1 border-b border-[#1b1922]">
+                    <div className="flex justify-between py-1">
                       <span className="text-slate-400">Chat Endpoint:</span>
                       <span className="font-mono text-slate-300">{target.base_url}/chat</span>
-                    </div>
-                    <div className="flex justify-between py-1">
-                      <span className="text-slate-400">Health Endpoint:</span>
-                      <span className="font-mono text-slate-300">{target.base_url}/health</span>
                     </div>
                   </div>
                 </div>
@@ -319,7 +242,7 @@ export const TargetInspectorModal: React.FC<TargetInspectorModalProps> = ({
               {/* Capabilities Detailed Breakdown */}
               <div className="p-4 rounded-xl bg-[#13131c] border border-[#23202b] space-y-4">
                 <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block">
-                  Declared Capabilities & Attack Attack Surfaces
+                  Declared Architecture & Capabilities
                 </span>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
@@ -405,131 +328,17 @@ export const TargetInspectorModal: React.FC<TargetInspectorModalProps> = ({
             </div>
           )}
 
-          {/* TAB 2: LIVE HEALTH & CONNECTIVITY */}
-          {activeTab === 'test' && (
-            <div className="space-y-4">
-              <div className="p-4 rounded-xl bg-[#13131c] border border-[#23202b] flex items-center justify-between">
-                <div>
-                  <h4 className="text-xs font-bold text-white">Target Endpoint Diagnostics</h4>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    Validates target health, contract schema, and response latency with SSRF boundary checks
-                  </p>
-                </div>
-                <button
-                  onClick={handleTestConnection}
-                  disabled={isTesting}
-                  className="px-4 py-2 rounded-lg text-xs font-bold tracking-wide uppercase bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white transition-colors shadow-md shadow-indigo-950/40 flex items-center space-x-2"
-                >
-                  <span>{isTesting ? '⏳ Testing...' : '⚡ Test Connection Now'}</span>
-                </button>
-              </div>
 
-              {testResult && (
-                <div className={`p-4 rounded-xl border ${
-                  testResult.success
-                    ? 'bg-emerald-950/20 border-emerald-800/40'
-                    : 'bg-rose-950/20 border-rose-800/40'
-                }`}>
-                  <div className="flex items-center space-x-2 mb-3">
-                    <span className="text-base">{testResult.success ? '🟢' : '🔴'}</span>
-                    <span className={`font-bold text-xs ${testResult.success ? 'text-emerald-400' : 'text-rose-400'}`}>
-                      {testResult.success ? `Target Responding (Latency: ${testResult.latency}ms)` : 'Target Unreachable'}
-                    </span>
-                  </div>
-
-                  {testResult.success ? (
-                    <div className="space-y-3 text-xs">
-                      <div>
-                        <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block mb-1">
-                          Health Check Response (/health)
-                        </span>
-                        <pre className="p-3 rounded-lg bg-[#070709] border border-[#1f1b22] font-mono text-[11px] text-emerald-400">
-                          {JSON.stringify(testResult.data?.health || {}, null, 2)}
-                        </pre>
-                      </div>
-
-                      {testResult.data?.contract && (
-                        <div>
-                          <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block mb-1">
-                            Contract Schema (/contract)
-                          </span>
-                          <pre className="p-3 rounded-lg bg-[#070709] border border-[#1f1b22] font-mono text-[11px] text-slate-300 max-h-48 overflow-y-auto">
-                            {JSON.stringify(testResult.data.contract, null, 2)}
-                          </pre>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <p className="text-xs text-rose-300 font-mono">{testResult.error}</p>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* TAB 3: RAG DOCUMENTS */}
-          {activeTab === 'documents' && hasRag && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between text-xs text-slate-400">
-                <span>Vector Store Knowledge Base Catalog</span>
-                <span className="font-mono">{documents.length} documents indexed</span>
-              </div>
-
-              {loadingDocs ? (
-                <div className="py-8 text-center text-slate-500 font-mono text-xs">
-                  Loading document catalog...
-                </div>
-              ) : documents.length === 0 ? (
-                <div className="p-8 text-center text-slate-500 font-mono text-xs border border-dashed border-[#23202b] rounded-xl">
-                  No documents found in knowledge base store.
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {documents.map((doc, dIdx) => (
-                    <div
-                      key={dIdx}
-                      className="p-3 rounded-xl bg-[#13131c] border border-[#23202b] flex items-center justify-between text-xs"
-                    >
-                      <div className="space-y-0.5">
-                        <div className="flex items-center space-x-2">
-                          <span className="font-semibold text-white">{doc.title || doc.name || `Document #${dIdx + 1}`}</span>
-                          {doc.classification && (
-                            <span className="px-1.5 py-0.2 rounded text-[10px] font-mono bg-rose-950/60 text-rose-400 border border-rose-800/40">
-                              {doc.classification}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-[11px] text-slate-400 font-mono">{doc.id || doc.doc_id || doc.filename}</p>
-                      </div>
-
-                      <div className="text-right font-mono text-[11px] text-slate-500">
-                        {doc.tenant_id ? `Tenant: ${doc.tenant_id}` : 'Global Context'}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* TAB 4: INTERACTIVE CHAT SANDBOX */}
+          {/* TAB 3: INTERACTIVE CHAT SANDBOX */}
           {activeTab === 'sandbox' && (
             <div className="space-y-4 flex flex-col h-[480px]">
               {/* Sandbox Controls Bar */}
               <div className="flex items-center justify-between px-3 py-2 bg-[#0c0c12] border border-[#211e29] rounded-xl text-xs">
-                <div className="flex items-center space-x-2 text-slate-400">
-                  <span>🛡️ Target Mitigation:</span>
-                  <button
-                    type="button"
-                    onClick={() => setSandboxMitigation(!sandboxMitigation)}
-                    className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all ${
-                      sandboxMitigation
-                        ? 'bg-emerald-950 text-emerald-300 border border-emerald-700/60 shadow-sm shadow-emerald-950'
-                        : 'bg-rose-950 text-rose-300 border border-rose-700/60 shadow-sm shadow-rose-950'
-                    }`}
-                  >
-                    {sandboxMitigation ? '🛡️ ACTIVE (Hardened)' : '⚠️ OFF (Vulnerable)'}
-                  </button>
+                <div className="flex items-center space-x-2">
+                  <span className="text-slate-400">Security Mode:</span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-950 text-emerald-400 border border-emerald-800">
+                    PRODUCTION SECURED
+                  </span>
                 </div>
                 <div className="text-[11px] font-mono text-slate-500">
                   Audited via ShadowBoard Probe Engine
@@ -552,15 +361,23 @@ export const TargetInspectorModal: React.FC<TargetInspectorModalProps> = ({
                       <div className="text-[10px] font-mono opacity-70 mb-1 flex items-center justify-between space-x-2">
                         <span>{msg.role === 'user' ? 'USER' : target.name}</span>
                         <div className="flex items-center space-x-2">
-                          {msg.verdict && (
-                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
-                              msg.verdict === 'DEFENDED'
+                          {(msg.verdict || msg.stance) && (
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wider ${
+                              msg.verdict === 'ERROR' || msg.stance === 'ERROR'
+                                ? 'bg-slate-800 text-amber-400 border border-amber-800/60'
+                                : msg.verdict === 'DEFENDED'
                                 ? 'bg-emerald-900/60 text-emerald-300 border border-emerald-700'
                                 : msg.verdict === 'BREACH'
                                 ? 'bg-rose-900/60 text-rose-300 border border-rose-700 animate-pulse'
                                 : 'bg-slate-800 text-slate-300 border border-slate-700'
                             }`}>
-                              {msg.verdict}
+                              {msg.verdict === 'ERROR' || msg.stance === 'ERROR'
+                                ? 'TARGET ERROR (NO BREACH)'
+                                : msg.verdict === 'DEFENDED'
+                                ? 'DEFENDED'
+                                : msg.verdict === 'BREACH'
+                                ? 'BREACH DETECTED'
+                                : 'AUDITED'}
                             </span>
                           )}
                           {msg.latency && <span>{msg.latency}ms</span>}

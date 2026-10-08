@@ -13,19 +13,16 @@ export const ScanInspectorModal: React.FC<ScanInspectorModalProps> = ({ scanId, 
   const [scan, setScan] = useState<ScanDetails | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'findings' | 'attempts' | 'stream'>('findings');
+  const [activeTab, setActiveTab] = useState<'findings' | 'attempts'>('findings');
   const [expandedFindingId, setExpandedFindingId] = useState<number | null>(null);
   const [expandedAttemptId, setExpandedAttemptId] = useState<number | null>(null);
   const [copiedText, setCopiedText] = useState<string | null>(null);
-  const [liveStreamEvents, setLiveStreamEvents] = useState<any[]>([]);
-
   useEffect(() => {
     if (!scanId) return;
 
     let isMounted = true;
     setLoading(true);
     setError(null);
-    setLiveStreamEvents([]);
 
     // Fetch scan details
     api.get<ScanDetails>(`/scans/${scanId}`)
@@ -54,10 +51,10 @@ export const ScanInspectorModal: React.FC<ScanInspectorModalProps> = ({ scanId, 
     es.onmessage = (event) => {
       try {
         const payload = JSON.parse(event.data);
-        if (isMounted) {
-          setLiveStreamEvents((prev) => [...prev, payload]);
-        }
         if (payload.type === 'scan_complete' || payload.type === 'error') {
+          if (isMounted) {
+            api.get<ScanDetails>(`/scans/${scanId}`).then((d) => isMounted && setScan(d)).catch(() => {});
+          }
           es.close();
         }
       } catch (e) {
@@ -111,7 +108,13 @@ export const ScanInspectorModal: React.FC<ScanInspectorModalProps> = ({ scanId, 
     if (s === 'REFUSED') {
       return <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-950/80 text-emerald-400 border border-emerald-700/60">REFUSED (DEFENDED)</span>;
     }
-    return <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-950/80 text-amber-400 border border-amber-700/60">{s || 'PARTIAL'}</span>;
+    if (s === 'ERROR') {
+      return <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-800 text-amber-400 border border-amber-800/60">TARGET ERROR (NO BREACH)</span>;
+    }
+    if (s === 'EVASIVE' || s === 'INCONCLUSIVE') {
+      return <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700">{s}</span>;
+    }
+    return <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-950/80 text-amber-400 border border-amber-700/60">{s === 'PARTIAL' ? 'EVALUATED' : (s || 'EVALUATED')}</span>;
   };
 
   return (
@@ -140,12 +143,8 @@ export const ScanInspectorModal: React.FC<ScanInspectorModalProps> = ({ scanId, 
                   </span>
                 )}
                 {scan && (
-                  <span className={`px-2 py-0.5 rounded text-[10px] font-mono border ${
-                    scan.mitigation_enabled
-                      ? 'bg-emerald-950/60 text-emerald-400 border-emerald-800/40'
-                      : 'bg-amber-950/60 text-amber-400 border-amber-800/40'
-                  }`}>
-                    {scan.mitigation_enabled ? 'MITIGATED' : 'VULNERABLE'}
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono border bg-emerald-950/60 text-emerald-400 border-emerald-800/40">
+                    PROTECTED (HARDENED)
                   </span>
                 )}
               </div>
@@ -260,18 +259,6 @@ export const ScanInspectorModal: React.FC<ScanInspectorModalProps> = ({ scanId, 
           >
             <span>🎯</span>
             <span>Adversarial Prompts & Responses ({scan?.attempts?.length ?? 0})</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('stream')}
-            className={`py-3 px-4 text-xs font-semibold border-b-2 transition-all flex items-center space-x-2 ${
-              activeTab === 'stream'
-                ? 'border-rose-500 text-rose-400 bg-rose-950/10'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <span>📡</span>
-            <span>Execution Telemetry Stream ({liveStreamEvents.length})</span>
           </button>
         </div>
 
@@ -406,7 +393,16 @@ export const ScanInspectorModal: React.FC<ScanInspectorModalProps> = ({ scanId, 
                                 <div>
                                   <div className="flex items-center space-x-2">
                                     <span className="font-bold text-xs text-white">Strategy: {att.strategy}</span>
-                                    {getStanceBadge(att.stance)}
+                                    {((att.response || '').toLowerCase().includes('internal server error') ||
+                                      (att.response || '').toLowerCase().includes('server error') ||
+                                      (att.response || '').toLowerCase().includes('target communication error') ||
+                                      (att.stance || '').toUpperCase() === 'ERROR') ? (
+                                      <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-800 text-amber-400 border border-amber-800/60">
+                                        TARGET ERROR (NO BREACH)
+                                      </span>
+                                    ) : (
+                                      getStanceBadge(att.stance)
+                                    )}
                                   </div>
                                   <p className="text-xs text-slate-400 mt-1 font-mono line-clamp-1">
                                     &quot;{att.prompt?.slice(0, 90)}...&quot;
@@ -491,45 +487,6 @@ export const ScanInspectorModal: React.FC<ScanInspectorModalProps> = ({ scanId, 
                       })}
                     </div>
                   )}
-                </div>
-              )}
-
-              {/* TAB 3: TELEMETRY STREAM */}
-              {activeTab === 'stream' && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between text-xs font-mono text-slate-400">
-                    <span>Recorded & Live SSE Stream Feed</span>
-                    <span>{liveStreamEvents.length} events received</span>
-                  </div>
-
-                  <div className="bg-[#070709] border border-[#1f1b22] rounded-xl p-4 font-mono text-[11px] text-slate-300 min-h-[300px] max-h-[460px] overflow-y-auto space-y-2">
-                    {liveStreamEvents.length === 0 ? (
-                      <div className="py-16 text-center text-slate-500 italic">
-                        Connecting to event stream...
-                      </div>
-                    ) : (
-                      liveStreamEvents.map((evt, idx) => (
-                        <div key={idx} className="p-2 rounded bg-[#0f0f15] border border-[#1b1922] flex items-start space-x-2">
-                          <span className="text-rose-400 font-bold shrink-0">[{evt.type || 'EVENT'}]</span>
-                          <div className="text-slate-300 break-all leading-relaxed">
-                            {evt.data?.message ? (
-                              <span>{evt.data.message}</span>
-                            ) : evt.data?.snippet ? (
-                              <span>
-                                <span className="text-sky-300">[{evt.data.strategy}]</span> {evt.data.snippet} &rarr; <span className="text-amber-300 font-bold">{evt.data.stance}</span>
-                              </span>
-                            ) : evt.data?.finding_id ? (
-                              <span>
-                                Recorded finding: <strong className="text-rose-400">{evt.data.finding_id}</strong> ({evt.data.severity})
-                              </span>
-                            ) : (
-                              <span>{JSON.stringify(evt.data || evt)}</span>
-                            )}
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
                 </div>
               )}
             </>

@@ -5,7 +5,7 @@ import asyncio
 from unittest.mock import patch
 from fastapi.testclient import TestClient
 from main import app
-from app.core.config import Settings
+from app.core.config import Settings, settings
 from app.core.ssrf import validate_target_url, safe_http_get_json, SSRFValidationError
 from app.api.endpoints.scans import (
     active_scans,
@@ -73,14 +73,20 @@ def test_admin_auth_middleware_with_configured_key(client):
 def test_admin_auth_fail_closed_in_non_test_mode(client):
     """0.5: When key is unset in production, API must fail closed (503), not allow requests."""
     old_env = os.environ.pop("SHADOWBOARD_ADMIN_KEY", None)
+    old_api_key = os.environ.pop("SHADOWBOARD_API_KEY", None)
+    old_settings_key = getattr(settings, "SHADOWBOARD_ADMIN_KEY", None)
+    settings.SHADOWBOARD_ADMIN_KEY = None
     try:
         with patch("app.core.middleware.is_test_environment", return_value=False):
             resp = client.get("/api/targets")
             assert resp.status_code == 503
             assert "fail-closed" in resp.json()["detail"].lower()
     finally:
+        settings.SHADOWBOARD_ADMIN_KEY = old_settings_key
         if old_env is not None:
             os.environ["SHADOWBOARD_ADMIN_KEY"] = old_env
+        if old_api_key is not None:
+            os.environ["SHADOWBOARD_API_KEY"] = old_api_key
 
 
 def test_cors_origin_parsing_bans_wildcard():

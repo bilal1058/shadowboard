@@ -31,9 +31,9 @@ async def export_scan_sarif(scan_id: int, db: aiosqlite.Connection = Depends(get
     """Exports findings as an OASIS SARIF 2.1.0 document for GitHub Code Scanning."""
     cursor = await db.execute(
         """
-        SELECT s.id, t.name, f.finding_id, f.owasp_category, f.status, f.severity, f.remediation, f.evidence_hash
+        SELECT s.id, COALESCE(t.name, 'Target #' || s.target_id), f.finding_id, f.owasp_category, f.status, f.severity, f.remediation, f.evidence_hash
         FROM scan_runs s
-        JOIN targets t ON s.target_id = t.id
+        LEFT JOIN targets t ON s.target_id = t.id
         LEFT JOIN findings f ON s.id = f.scan_id
         WHERE s.id = ?
         """,
@@ -66,9 +66,9 @@ async def export_scan_junit(scan_id: int, db: aiosqlite.Connection = Depends(get
     """Exports scan results as JUnit XML for GitLab / Jenkins pipeline integration."""
     cursor = await db.execute(
         """
-        SELECT s.id, t.name, f.finding_id, f.owasp_category, f.status, f.severity, f.remediation, f.evidence_hash
+        SELECT s.id, COALESCE(t.name, 'Target #' || s.target_id), f.finding_id, f.owasp_category, f.status, f.severity, f.remediation, f.evidence_hash
         FROM scan_runs s
-        JOIN targets t ON s.target_id = t.id
+        LEFT JOIN targets t ON s.target_id = t.id
         LEFT JOIN findings f ON s.id = f.scan_id
         WHERE s.id = ?
         """,

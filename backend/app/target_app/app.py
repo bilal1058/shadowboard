@@ -18,12 +18,25 @@ from pydantic import BaseModel, Field
 from groq import Groq
 
 # Ensure environment variables are loaded
-env_path = Path(__file__).resolve().parent.parent.parent / ".env"
-load_dotenv(dotenv_path=env_path)
+_root_dir = Path(__file__).resolve().parent.parent.parent.parent
+_backend_dir = Path(__file__).resolve().parent.parent.parent
+for _env_file in [_root_dir / ".env", _backend_dir / ".env", Path(".env"), Path("backend/.env")]:
+    if _env_file.exists():
+        load_dotenv(_env_file, override=False)
+
 
 app = FastAPI(
     title="Meridian Support Assistant",
     description="External, customer-facing conversational support assistant"
+)
+
+from fastapi.middleware.cors import CORSMiddleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://localhost:8000", "http://127.0.0.1:3000", "http://127.0.0.1:8000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Deployment-time Calibration Mode (Default: False -> Always Enforced Hardened Security)
@@ -119,7 +132,21 @@ PUBLIC_FAQS = {
 }
 
 groq_api_key = os.getenv("GROQ_API_KEY")
-groq_client = Groq(api_key=groq_api_key, timeout=4.0, max_retries=0) if groq_api_key else None
+groq_client = Groq(api_key=groq_api_key, timeout=6.0, max_retries=1) if groq_api_key else None
+
+
+def get_groq_client() -> Optional[Groq]:
+    global groq_client
+    if groq_client is not None:
+        return groq_client
+    key = os.getenv("GROQ_API_KEY")
+    if key:
+        try:
+            groq_client = Groq(api_key=key, timeout=6.0, max_retries=1)
+        except Exception:
+            pass
+    return groq_client
+
 
 
 class ChatMessage(BaseModel):
@@ -181,8 +208,11 @@ import asyncio
 
 
 async def call_groq_llm(messages: list[ChatMessage], mitigation_on: bool = True) -> Optional[str]:
-    """Invokes Groq LLM using realistic unmitigated prompt (no protection) vs hardened prompt."""
-    if not groq_client:
+    """Invokes live Groq LLM (with OpenRouter fallback) using realistic unmitigated prompt vs hardened prompt."""
+    client = get_groq_client()
+    openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
+
+    if not client and not openrouter_api_key:
         return None
 
     sys_instruction = SYSTEM_PROMPT_MITIGATED if mitigation_on else SYSTEM_PROMPT_UNMITIGATED
@@ -191,23 +221,54 @@ async def call_groq_llm(messages: list[ChatMessage], mitigation_on: bool = True)
     for m in messages[-6:]:
         formatted_messages.append({"role": m.role, "content": m.content})
 
-    for model_name in ["qwen/qwen3.8-27b", "openai/gpt-oss-120b", "qwen/qwen3.6-27b"]:
+    # 1. Primary: Groq fast model execution
+    if client:
+        for model_name in ["qwen/qwen3.8-27b", "openai/gpt-oss-120b", "openai/gpt-oss-20b"]:
+            try:
+                res = await asyncio.to_thread(
+                    client.chat.completions.create,
+                    model=model_name,
+                    max_tokens=350,
+                    temperature=0.1,
+                    messages=formatted_messages
+                )
+                raw = res.choices[0].message.content or ""
+                raw = re.sub(r"<think>.*?(</think>|$)", "", raw, flags=re.DOTALL).strip()
+                if raw:
+                    return raw
+            except Exception:
+                continue
+
+    # 2. Resilient Fallback: OpenRouter
+    if openrouter_api_key:
         try:
-            res = await asyncio.to_thread(
-                groq_client.chat.completions.create,
-                model=model_name,
-                max_tokens=250,
-                temperature=0.1,
-                messages=formatted_messages
-            )
-            raw = res.choices[0].message.content or ""
-            raw = re.sub(r"<think>.*?(</think>|$)", "", raw, flags=re.DOTALL).strip()
-            if raw:
-                return raw
+            import httpx
+            async with httpx.AsyncClient(timeout=10.0) as http_client:
+                for or_model in ["qwen/qwen-2.5-72b-instruct", "meta-llama/llama-3.3-70b-instruct"]:
+                    resp = await http_client.post(
+                        "https://openrouter.ai/api/v1/chat/completions",
+                        headers={
+                            "Authorization": f"Bearer {openrouter_api_key}",
+                            "Content-Type": "application/json",
+                        },
+                        json={
+                            "model": or_model,
+                            "messages": formatted_messages,
+                            "max_tokens": 350,
+                            "temperature": 0.1,
+                        }
+                    )
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        raw = data["choices"][0]["message"]["content"] or ""
+                        raw = re.sub(r"<think>.*?(</think>|$)", "", raw, flags=re.DOTALL).strip()
+                        if raw:
+                            return raw
         except Exception:
-            continue
+            pass
 
     return None
+
 
 
 @app.post("/chat", response_model=ChatResponse)

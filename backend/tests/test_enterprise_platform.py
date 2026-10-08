@@ -95,19 +95,21 @@ def test_regression_baseline_and_diff(client):
     assert scans_resp.status_code == 200
     scans = scans_resp.json()
     if scans:
-        scan_id = scans[0]["id"]
+        scan = scans[0]
+        scan_id = scan["id"]
+        target_id = scan.get("target_id", 2)
         # Set baseline
-        base_resp = client.post("/api/regression/baseline", json={"target_id": 2, "scan_id": scan_id})
+        base_resp = client.post("/api/regression/baseline", json={"target_id": target_id, "scan_id": scan_id})
         assert base_resp.status_code == 200
         base_data = base_resp.json()
-        assert base_data["target_id"] == 2
+        assert base_data["target_id"] == target_id
 
         # Get baseline
-        get_base_resp = client.get("/api/regression/baseline/2")
+        get_base_resp = client.get(f"/api/regression/baseline/{target_id}")
         assert get_base_resp.status_code == 200
 
         # Diff
-        diff_resp = client.post("/api/regression/diff", json={"target_id": 2, "current_scan_id": scan_id})
+        diff_resp = client.post("/api/regression/diff", json={"target_id": target_id, "current_scan_id": scan_id})
         assert diff_resp.status_code == 200
         diff_data = diff_resp.json()
         assert "ci_gate_status" in diff_data

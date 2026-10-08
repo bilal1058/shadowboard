@@ -104,3 +104,6 @@ npm-debug.log*
 *.egg-info/
 dist/
 build/
+
+# Cloudflare Security Audit Artifacts
+security-audit/

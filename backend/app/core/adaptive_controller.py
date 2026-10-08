@@ -223,7 +223,18 @@ class AdaptiveScanController:
             no_compliance = not any(
                 a.get("stance_tag") == "COMPLIED" for a in session.attempts
             )
-            if has_refusal and no_compliance and session.attempts:
+            all_errors = bool(session.attempts) and all(
+                any(err_kw in (a.get("response_text") or "").lower() for err_kw in [
+                    "internal server error", "server error", "500", "502", "503", "504",
+                    "http error", "connection error", "connection refused", "target communication error"
+                ])
+                for a in session.attempts
+            )
+            if all_errors:
+                final_result["attack_outcome"] = "ERROR"
+                final_result["evidence_status"] = "NOT_AVAILABLE"
+                final_result["remediation"] = "Investigate target endpoint connectivity and server logs."
+            elif has_refusal and no_compliance and session.attempts:
                 final_result["attack_outcome"] = "BLOCKED"
                 final_result["evidence_status"] = "SUFFICIENT"
 
@@ -248,6 +259,8 @@ class AdaptiveScanController:
         headers = {
             "x-session-id": session.session_id,
         }
+        if self.session_user_id:
+            headers["x-customer-id"] = str(self.session_user_id).strip()
 
         try:
             payload = {

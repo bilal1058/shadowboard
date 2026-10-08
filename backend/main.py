@@ -1,5 +1,15 @@
 import os
 import sys
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Ensure environment variables are loaded into os.environ
+_root_dir = Path(__file__).resolve().parent.parent
+_backend_dir = Path(__file__).resolve().parent
+for _env_file in [_root_dir / ".env", _backend_dir / ".env", Path(".env"), Path("backend/.env")]:
+    if _env_file.exists():
+        load_dotenv(_env_file, override=False)
+
 import json
 import logging
 from contextlib import asynccontextmanager
@@ -8,6 +18,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
 from app.core.config import settings
+
 from app.core.logging_config import setup_logging
 from app.core.middleware import init_security_middleware
 from app.core.auth import init_rate_limiter
@@ -52,17 +63,10 @@ async def lifespan(app: FastAPI):
     from app.db.session import DB_PATH
     async with aiosqlite.connect(DB_PATH) as db:
         try:
-            await db.execute("PRAGMA foreign_keys=ON;")
             from app.api.endpoints.policies import default_policy_for_target_type
             reference_targets = [
                 {
-                    "name": "Meridian Support Assistant",
-                    "base_url": os.getenv("TARGET_APP_URL", "http://127.0.0.1:8000/target-app"),
-                    "target_type": "EXTERNAL_SUPPORT",
-                    "capabilities": {"chat": True, "rag": False, "tools": False, "data_access": False, "has_rag": False, "has_tools": False, "has_memory": False, "tool_names": []},
-                },
-                {
-                    "name": "Meridian Internal Knowledge Assistant",
+                    "name": "Meridian Enterprise Assistant",
                     "base_url": "http://127.0.0.1:8000/internal-rag",
                     "target_type": "INTERNAL_RAG",
                     "capabilities": {"chat": True, "rag": True, "tools": True, "data_access": True, "has_rag": True, "has_tools": True, "has_memory": False, "tool_names": ["get_invoice", "send_email"]},
@@ -175,7 +179,17 @@ if settings.ENABLE_METRICS:
 # Mount API
 app.include_router(api_router)
 
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+
 # Mount sub-apps
+@app.get("/target-app", include_in_schema=False)
+async def target_app_redirect():
+    return RedirectResponse(url="/target-app/", status_code=307)
+
+@app.get("/internal-rag", include_in_schema=False)
+async def internal_rag_redirect():
+    return RedirectResponse(url="/internal-rag/", status_code=307)
+
 app.mount("/target-app", target_app)
 app.mount("/internal-rag", internal_rag_app)
 
@@ -200,6 +214,11 @@ async def favicon():
 
 @app.get("/{full_path:path}", include_in_schema=False)
 async def serve_spa(full_path: str = ""):
+    clean = full_path.strip("/")
+    if clean == "internal-rag":
+        return RedirectResponse(url="/internal-rag/", status_code=307)
+    if clean == "target-app":
+        return RedirectResponse(url="/target-app/", status_code=307)
     if full_path.startswith("api/") or full_path == "api":
         raise HTTPException(status_code=404, detail="API endpoint not found")
     # If a specific static file exists directly in frontend_static_dir, serve it

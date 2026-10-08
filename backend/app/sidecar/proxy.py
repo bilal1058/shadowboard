@@ -137,6 +137,45 @@ class ObservationProxy:
         # Clean outbound headers to avoid hop-by-hop issues
         fwd_headers = {k: v for k, v in (headers or {}).items() if k.lower() not in ("host", "content-length")}
 
+        import ipaddress
+        from urllib.parse import urlparse
+        from app.core.ssrf import METADATA_IPS, BLOCKED_HOSTNAMES, is_ip_blocked
+        try:
+            parsed = urlparse(target_url)
+            if parsed.scheme.lower() not in ("http", "https"):
+                raise ValueError(f"Prohibited URL scheme '{parsed.scheme}'. Only HTTP and HTTPS protocols are permitted.")
+            hostname = (parsed.hostname or "").lower()
+            if not hostname:
+                raise ValueError("URL must include a valid hostname.")
+            if hostname in BLOCKED_HOSTNAMES or hostname in METADATA_IPS:
+                raise ValueError(f"Access to prohibited metadata destination '{hostname}' is blocked.")
+            try:
+                ip = ipaddress.ip_address(hostname)
+                blocked, reason = is_ip_blocked(str(ip), allow_local=True)
+                if blocked:
+                    raise ValueError(reason)
+            except ValueError as ip_err:
+                if str(ip_err).startswith("Access to cloud metadata"):
+                    raise
+        except Exception as exc:
+            status_code = 400
+            resp_headers = {"content-type": "application/json"}
+            resp_body_str = json.dumps({"error": "SSRF Blocked", "details": str(exc)})
+            resp_bytes = resp_body_str.encode("utf-8")
+            self.record_event(
+                session_id=session_id,
+                method=method,
+                url=target_url,
+                direction=direction,
+                headers=headers,
+                request_body=req_body_str,
+                status_code=status_code,
+                response_headers=resp_headers,
+                response_body=resp_body_str,
+                timestamp_utc=t_start,
+            )
+            return status_code, resp_headers, resp_bytes
+
         async with httpx.AsyncClient(timeout=timeout) as client:
             try:
                 resp = await client.request(

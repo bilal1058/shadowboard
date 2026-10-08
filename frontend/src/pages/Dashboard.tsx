@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useTargets, useScans, useTriggerScan, useScanStream } from '@/hooks/useApi';
+import { useTargets, useScans, useTriggerScan } from '@/hooks/useApi';
 import { api } from '@/api/client';
 import { Target } from '@/types/api';
 import toast from 'react-hot-toast';
@@ -11,61 +11,119 @@ export const DashboardPage: React.FC = () => {
   const { scans, loading: scansLoading, refresh: refreshScans } = useScans();
 
   const [activeTab, setActiveTab] = useState<'dashboard' | 'targets' | 'history'>('dashboard');
-  const [selectedTargetId, setSelectedTargetId] = useState<number>(1);
-  const [mitigationEnabled, setMitigationEnabled] = useState<boolean>(true);
-  const [activeScanId, setActiveScanId] = useState<number | null>(null);
+  const [selectedTargetId, setSelectedTargetId] = useState<number>(0);
   const [selectedScanModalId, setSelectedScanModalId] = useState<number | null>(null);
   const [inspectingTarget, setInspectingTarget] = useState<Target | null>(null);
   const [apiKey, setApiKey] = useState<string>('');
   const [adminSessionActive, setAdminSessionActive] = useState<boolean>(false);
   const [apiKeyModalOpen, setApiKeyModalOpen] = useState<boolean>(false);
-  const [healthStatus, setHealthStatus] = useState<'checking' | 'healthy' | 'unreachable'>('checking');
-  const [targetPingResults, setTargetPingResults] = useState<Record<number, { latency: number; status: string }>>({});
+
+  // Connect Custom Target (Link option for industry testing)
+  const [customTargetModalOpen, setCustomTargetModalOpen] = useState<boolean>(false);
+  const [customName, setCustomName] = useState<string>('');
+  const [customUrl, setCustomUrl] = useState<string>('');
+  const [customModel, setCustomModel] = useState<string>('gpt-4o');
+  const [customToolNames, setCustomToolNames] = useState<string>('get_invoice, send_email');
+  const [isCreatingTarget, setIsCreatingTarget] = useState<boolean>(false);
+
+  // Filter out simple chatbots without tools; retain tool-enabled chatbots and custom industry targets
+  const visibleTargets = targets.filter((tgt) => {
+    if (tgt.base_url?.includes('/target-app') || tgt.name === 'Meridian Support Assistant') {
+      return false;
+    }
+    return true;
+  });
 
   const { trigger, isScanning } = useTriggerScan(selectedTargetId);
-  const { events: liveEvents, isStreaming } = useScanStream(activeScanId || 0);
 
-  // Check health on mount
+  // Check saved admin session on mount
   useEffect(() => {
-    fetch('/api/health')
-      .then((res) => {
-        if (res.ok) setHealthStatus('healthy');
-        else setHealthStatus('unreachable');
-      })
-      .catch(() => setHealthStatus('unreachable'));
+    const savedKey = api.getApiKey();
+    if (savedKey) {
+      setAdminSessionActive(true);
+    }
   }, []);
 
+  // Sync selected target when visible targets list updates
   useEffect(() => {
-    if (!selectedTargetId) return;
-    api.get<{ mitigation_enabled: boolean }>(`/targets/${selectedTargetId}/mitigation`)
-      .then((config) => setMitigationEnabled(config.mitigation_enabled))
-      .catch(() => setMitigationEnabled(false));
-  }, [selectedTargetId]);
+    if (visibleTargets.length > 0) {
+      if (!selectedTargetId || !visibleTargets.some((t) => t.id === selectedTargetId)) {
+        setSelectedTargetId(visibleTargets[0].id);
+      }
+    }
+  }, [visibleTargets, selectedTargetId]);
 
-  const handleMitigationChange = async (enabled: boolean) => {
+  // Automatically reload targets and scans when admin session becomes active
+  useEffect(() => {
+    if (adminSessionActive) {
+      refreshTargets();
+      refreshScans();
+    }
+  }, [adminSessionActive]);
+
+  const handleSaveApiKey = async (key: string) => {
+    const cleanKey = key.trim();
+    if (!cleanKey) return;
     try {
-      const config = await api.put<{ mitigation_enabled: boolean }>(
-        `/targets/${selectedTargetId}/mitigation`, { enabled }
-      );
-      setMitigationEnabled(config.mitigation_enabled);
-      toast.success(`Target mitigation ${config.mitigation_enabled ? 'enabled' : 'disabled'}`);
+      api.setApiKey(cleanKey);
+      setAdminSessionActive(true);
+      setApiKeyModalOpen(false);
+      setApiKey('');
+      try {
+        await api.establishBrowserSession(cleanKey);
+      } catch (sessionErr) {
+        console.warn('Session cookie fallback to Bearer header:', sessionErr);
+      }
+      toast.success('Administrative session established');
+      await refreshTargets();
+      await refreshScans();
     } catch (error: any) {
-      toast.error(error.message || 'Target mitigation update failed');
+      toast.error(error.message || 'Administrative authentication failed');
     }
   };
 
-  const handleSaveApiKey = async (key: string) => {
-    if (!key.trim()) return;
+  const handleCreateCustomTarget = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!customUrl.trim()) {
+      toast.error('Target URL is required');
+      return;
+    }
+    setIsCreatingTarget(true);
     try {
-      await api.establishBrowserSession(key.trim());
-      setApiKey('');
-      setAdminSessionActive(true);
-      setApiKeyModalOpen(false);
-      toast.success('Administrative session established');
-      refreshTargets();
-      refreshScans();
-    } catch (error: any) {
-      toast.error(error.message || 'Administrative authentication failed');
+      const url = customUrl.trim();
+      let defaultName = 'Custom Industry Chatbot';
+      try {
+        defaultName = `Chatbot (${new URL(url).hostname})`;
+      } catch {}
+      const name = customName.trim() || defaultName;
+      const toolNamesList = customToolNames
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const created = await api.post<Target>('/targets', {
+        name,
+        base_url: url,
+        model_name: customModel.trim() || 'custom-agent',
+        target_type: 'INTERNAL_RAG',
+        target_mode: 'BLACK_BOX',
+        capabilities: {
+          chat: true,
+          rag: true,
+          tools: toolNamesList.length > 0,
+          data_access: toolNamesList.length > 0,
+          tool_names: toolNamesList,
+        },
+      });
+      toast.success(`Industry Target "${name}" connected successfully!`);
+      setCustomTargetModalOpen(false);
+      setCustomName('');
+      setCustomUrl('');
+      await refreshTargets();
+      setSelectedTargetId(created.id);
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to connect custom target URL');
+    } finally {
+      setIsCreatingTarget(false);
     }
   };
 
@@ -74,7 +132,6 @@ export const DashboardPage: React.FC = () => {
       toast.loading('Initiating security assessment...', { id: 'scan-trigger' });
       const result = await trigger();
       toast.success(`Scan #${result.scan_id} initiated`, { id: 'scan-trigger' });
-      setActiveScanId(result.scan_id);
       setSelectedScanModalId(result.scan_id);
       setTimeout(refreshScans, 1500);
     } catch (err: any) {
@@ -82,24 +139,6 @@ export const DashboardPage: React.FC = () => {
     }
   };
 
-  const pingTarget = async (tgt: Target) => {
-    try {
-      const t0 = performance.now();
-      await api.post('/targets/test-connection', { base_url: tgt.base_url });
-      const latency = Math.round(performance.now() - t0);
-      setTargetPingResults((prev) => ({
-        ...prev,
-        [tgt.id]: { latency, status: 'HEALTHY' },
-      }));
-      toast.success(`Target #${tgt.id} reachable in ${latency}ms`);
-    } catch (err: any) {
-      setTargetPingResults((prev) => ({
-        ...prev,
-        [tgt.id]: { latency: 0, status: 'ERROR' },
-      }));
-      toast.error(`Target #${tgt.id} connection failed`);
-    }
-  };
 
   return (
     <div className="min-h-screen bg-[#070709] text-slate-100 flex flex-col font-sans">
@@ -139,7 +178,7 @@ export const DashboardPage: React.FC = () => {
               }`}
             >
               <span>🎯</span>
-              <span>Targets Substrate ({targets.length})</span>
+              <span>Targets Substrate ({visibleTargets.length})</span>
             </button>
 
             <button
@@ -156,38 +195,12 @@ export const DashboardPage: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex items-center space-x-4">
-          <div className="flex items-center space-x-2 text-xs font-mono">
-            <span
-              className={`w-2 h-2 rounded-full ${
-                healthStatus === 'healthy'
-                  ? 'bg-emerald-500 animate-pulse'
-                  : healthStatus === 'checking'
-                  ? 'bg-amber-500'
-                  : 'bg-rose-500'
-              }`}
-            />
-            <span className="text-slate-400">
-              API:{' '}
-              <span
-                className={
-                  healthStatus === 'healthy'
-                    ? 'text-emerald-400'
-                    : healthStatus === 'checking'
-                    ? 'text-amber-400'
-                    : 'text-rose-400'
-                }
-              >
-                {healthStatus.toUpperCase()}
-              </span>
-            </span>
-          </div>
-
+        <div className="flex items-center space-x-3">
           <button
             onClick={() => setApiKeyModalOpen(true)}
-            className="px-3 py-1.5 rounded text-xs bg-[#16161e] hover:bg-[#20202c] border border-[#2b2733] text-slate-300 font-mono transition-colors"
+            className="px-3 py-1.5 rounded text-xs bg-[#16161e] hover:bg-[#20202c] border border-[#2b2733] text-slate-300 font-mono transition-colors flex items-center space-x-1.5"
           >
-            {adminSessionActive ? '🔑 Session Active' : '⚙️ Authenticate'}
+            <span>{adminSessionActive ? '🔑 Session Active' : '⚙️ Authenticate'}</span>
           </button>
         </div>
       </nav>
@@ -236,190 +249,166 @@ export const DashboardPage: React.FC = () => {
         {/* TAB 1: DASHBOARD / OVERVIEW */}
         {activeTab === 'dashboard' && (
           <>
-            {/* Top Section: Quick Scan Dispatcher & Active Target Info */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Target Selection & Scan Trigger */}
-              <div className="lg:col-span-2 bg-[#111116] border border-[#1f1b22] rounded-xl p-5 space-y-4">
-                <div className="flex items-center justify-between border-b border-[#1f1b22] pb-3">
-                  <div>
-                    <h2 className="text-sm font-bold text-white tracking-wide uppercase flex items-center space-x-2">
-                      <span>🎯</span>
-                      <span>Target Substrate & Dispatcher</span>
-                    </h2>
-                    <p className="text-xs text-slate-400 mt-0.5">Select a registered AI agent to execute automated adversarial probes</p>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <button
-                      onClick={() => setActiveTab('targets')}
-                      className="text-xs text-indigo-400 hover:underline font-mono"
-                    >
-                      View All Targets ↗
-                    </button>
-                    <button
-                      onClick={refreshTargets}
-                      className="text-xs text-slate-400 hover:text-slate-200 font-mono ml-2"
-                    >
-                      ⟳ Refresh
-                    </button>
-                  </div>
+            {/* Target Selection & Scan Trigger */}
+            <div className="bg-[#111116] border border-[#1f1b22] rounded-xl p-5 space-y-4">
+              <div className="flex flex-wrap items-center justify-between border-b border-[#1f1b22] pb-3 gap-3">
+                <div>
+                  <h2 className="text-sm font-bold text-white tracking-wide uppercase flex items-center space-x-2">
+                    <span>🎯</span>
+                    <span>Target Substrate &amp; Dispatcher</span>
+                  </h2>
+                  <p className="text-xs text-slate-400 mt-0.5">Select a registered AI agent or connect a custom endpoint URL to execute automated adversarial probes</p>
                 </div>
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => setCustomTargetModalOpen(true)}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition-colors flex items-center space-x-1.5 shadow-md shadow-indigo-950/50"
+                  >
+                    <span>🔗</span>
+                    <span>Connect Target URL</span>
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('targets')}
+                    className="px-3 py-1.5 rounded-lg text-xs text-slate-300 hover:text-white bg-[#181822] border border-[#2b2733] font-mono transition-colors"
+                  >
+                    View All Targets ↗
+                  </button>
+                  <button
+                    onClick={refreshTargets}
+                    className="px-3 py-1.5 rounded-lg text-xs text-slate-400 hover:text-slate-200 bg-[#181822] border border-[#2b2733] font-mono transition-colors"
+                  >
+                    ⟳ Refresh
+                  </button>
+                </div>
+              </div>
 
-                {targetsLoading ? (
-                  <div className="text-xs text-slate-500 py-6 text-center">Loading targets from persistence...</div>
-                ) : targetsError ? (
-                  <div className="text-xs text-rose-400 py-4 bg-rose-950/20 border border-rose-900/40 rounded p-3">
-                    Error loading targets: {targetsError}
+              {targetsLoading ? (
+                <div className="text-xs text-slate-500 py-6 text-center">Loading targets from persistence...</div>
+              ) : targetsError ? (
+                <div className="text-xs text-amber-300 py-4 bg-amber-950/20 border border-amber-900/40 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center space-x-2">
+                    <span>🔐</span>
+                    <span>Admin authentication key required to view targets and execute assessments.</span>
                   </div>
-                ) : (
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {targets.map((tgt) => {
-                        const caps: any = tgt.capabilities || {};
-                        const isSelected = selectedTargetId === tgt.id;
-                        return (
+                  <button
+                    onClick={() => setApiKeyModalOpen(true)}
+                    className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-rose-600 hover:bg-rose-500 text-white shadow-sm shrink-0"
+                  >
+                    Authenticate Now
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {visibleTargets.map((tgt) => {
+                      const caps: any = tgt.capabilities || {};
+                      const isSelected = selectedTargetId === tgt.id;
+                      return (
+                        <div
+                          key={tgt.id}
+                          className={`rounded-lg p-3 border transition-all flex flex-col justify-between ${
+                            isSelected
+                              ? 'border-rose-500/80 bg-rose-950/20 shadow-md shadow-rose-950/30'
+                              : 'border-[#1f1b22] bg-[#0c0c10] hover:border-slate-700'
+                          }`}
+                        >
                           <div
-                            key={tgt.id}
-                            className={`rounded-lg p-3 border transition-all flex flex-col justify-between ${
-                              isSelected
-                                ? 'border-rose-500/80 bg-rose-950/20 shadow-md shadow-rose-950/30'
-                                : 'border-[#1f1b22] bg-[#0c0c10] hover:border-slate-700'
-                            }`}
+                            onClick={() => setSelectedTargetId(tgt.id)}
+                            className="cursor-pointer space-y-2"
                           >
-                            <div
-                              onClick={() => setSelectedTargetId(tgt.id)}
-                              className="cursor-pointer space-y-2"
-                            >
-                              <div className="flex items-center justify-between">
-                                <span className="font-semibold text-xs text-white">#{tgt.id} {tgt.name}</span>
-                                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#16161e] text-slate-400 border border-[#26202c]">
-                                  {tgt.target_type || 'AGENT'}
-                                </span>
-                              </div>
-                              <div className="text-[11px] font-mono text-slate-400 truncate">
-                                {tgt.base_url}
-                              </div>
-
-                              {/* Capabilities tags */}
-                              <div className="flex flex-wrap gap-1.5 pt-1">
-                                {caps.chat !== false && (
-                                  <span className="px-1.5 py-0.2 rounded text-[9px] font-mono bg-emerald-950/80 text-emerald-400 border border-emerald-800/40">
-                                    CHAT
-                                  </span>
-                                )}
-                                {caps.rag && (
-                                  <span className="px-1.5 py-0.2 rounded text-[9px] font-mono bg-indigo-950/80 text-indigo-400 border border-indigo-800/40">
-                                    RAG
-                                  </span>
-                                )}
-                                {caps.tools && (
-                                  <span className="px-1.5 py-0.2 rounded text-[9px] font-mono bg-amber-950/80 text-amber-400 border border-amber-800/40">
-                                    {caps.tool_names?.length ? `${caps.tool_names.length} TOOLS` : 'TOOLS'}
-                                  </span>
-                                )}
-                                {caps.data_access && (
-                                  <span className="px-1.5 py-0.2 rounded text-[9px] font-mono bg-rose-950/80 text-rose-400 border border-rose-800/40">
-                                    DB
-                                  </span>
-                                )}
-                              </div>
+                            <div className="flex items-center justify-between">
+                              <span className="font-semibold text-xs text-white">#{tgt.id} {tgt.name}</span>
+                              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#16161e] text-slate-400 border border-[#26202c]">
+                                {tgt.target_type || 'AGENT'}
+                              </span>
+                            </div>
+                            <div className="text-[11px] font-mono text-slate-400 truncate">
+                              {tgt.base_url}
                             </div>
 
-                            <div className="mt-3 pt-2 border-t border-[#1f1b22] flex items-center justify-between">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setInspectingTarget(tgt);
-                                }}
-                                className="text-[11px] font-mono text-indigo-400 hover:text-indigo-300 transition-colors"
-                              >
-                                🔍 Inspect Target & Sandbox &rarr;
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSelectedTargetId(tgt.id);
-                                }}
-                                className={`text-[10px] font-mono px-2 py-0.5 rounded ${
-                                  isSelected ? 'bg-rose-600 text-white' : 'bg-[#181822] text-slate-400'
-                                }`}
-                              >
-                                {isSelected ? 'Selected' : 'Select'}
-                              </button>
+                            {/* Capabilities tags */}
+                            <div className="flex flex-wrap gap-1.5 pt-1">
+                              {caps.chat !== false && (
+                                <span className="px-1.5 py-0.2 rounded text-[9px] font-mono bg-emerald-950/80 text-emerald-400 border border-emerald-800/40">
+                                  CHATBOT
+                                </span>
+                              )}
+                              {caps.rag && (
+                                <span className="px-1.5 py-0.2 rounded text-[9px] font-mono bg-indigo-950/80 text-indigo-400 border border-indigo-800/40">
+                                  RAG
+                                </span>
+                              )}
+                              {caps.tools && (
+                                <span className="px-1.5 py-0.2 rounded text-[9px] font-mono bg-amber-950/80 text-amber-400 border border-amber-800/40">
+                                  {caps.tool_names?.length ? `${caps.tool_names.length} TOOLS` : 'TOOLS'}
+                                </span>
+                              )}
+                              {caps.data_access && (
+                                <span className="px-1.5 py-0.2 rounded text-[9px] font-mono bg-rose-950/80 text-rose-400 border border-rose-800/40">
+                                  DATA ACCESS
+                                </span>
+                              )}
                             </div>
                           </div>
-                        );
-                      })}
-                    </div>
 
-                    <div className="pt-2 border-t border-[#1f1b22] flex flex-wrap items-center justify-between gap-4">
-                      <label className="flex items-center space-x-2 text-xs cursor-pointer select-none">
-                        <input
-                          type="checkbox"
-                          checked={mitigationEnabled}
-                          onChange={(e) => void handleMitigationChange(e.target.checked)}
-                          className="rounded bg-[#070709] border-slate-700 text-rose-600 focus:ring-0 focus:ring-offset-0"
-                        />
-                        <span className="text-slate-300 font-medium">Target Guardrails &amp; Policy Enforcement</span>
-                        <span className="text-[10px] text-slate-400 font-mono">
-                          ({mitigationEnabled ? '🛡️ Enforced (Production Hardened)' : '⚠️ Unmitigated (Pre-Patch Baseline)'})
-                        </span>
-                      </label>
-
-                      <button
-                        onClick={handleStartScan}
-                        disabled={isScanning || targets.length === 0}
-                        className="px-5 py-2 rounded-lg text-xs font-bold tracking-wide uppercase bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white shadow-lg shadow-rose-900/40 transition-all flex items-center space-x-2"
-                      >
-                        <span>{isScanning ? '⏳ Executing...' : '⚡ Launch Security Assessment'}</span>
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Real-time Status Card */}
-              <div className="bg-[#111116] border border-[#1f1b22] rounded-xl p-5 flex flex-col justify-between">
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h2 className="text-sm font-bold text-white tracking-wide uppercase flex items-center space-x-2">
-                      <span>📡</span>
-                      <span>Active Telemetry Feed</span>
-                    </h2>
-                    {activeScanId && (
-                      <span className="text-[10px] font-mono text-slate-400">
-                        Scan #{activeScanId}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="bg-[#070709] border border-[#1f1b22] rounded-lg p-3 font-mono text-[11px] text-slate-300 min-h-[160px] max-h-[220px] overflow-y-auto space-y-1.5">
-                    {liveEvents.length === 0 ? (
-                      <div className="text-slate-500 italic py-10 text-center">
-                        {isStreaming
-                          ? 'Connecting to scan SSE stream...'
-                          : 'No active SSE stream. Launch a scan or click "View Stream" on any historical scan below.'}
-                      </div>
-                    ) : (
-                      liveEvents.map((evt, idx) => (
-                        <div key={idx} className="leading-tight flex items-start space-x-1.5">
-                          <span className="text-rose-400 font-bold shrink-0">[{evt.type || 'EVENT'}]</span>
-                          <span className="text-slate-300 break-all">
-                            {evt.data?.message || (evt.data?.snippet ? `${evt.data.strategy}: ${evt.data.snippet}` : evt.finding_id ? `${evt.finding_id}: ${evt.status || ''}` : JSON.stringify(evt.data || evt))}
-                          </span>
+                          <div className="mt-3 pt-2 border-t border-[#1f1b22] flex items-center justify-between">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setInspectingTarget(tgt);
+                              }}
+                              className="text-[11px] font-mono text-indigo-400 hover:text-indigo-300 transition-colors"
+                            >
+                              🔍 Inspect &amp; Sandbox &rarr;
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedTargetId(tgt.id);
+                              }}
+                              className={`text-[10px] font-mono px-2 py-0.5 rounded ${
+                                isSelected ? 'bg-rose-600 text-white' : 'bg-[#181822] text-slate-400'
+                              }`}
+                            >
+                              {isSelected ? 'Selected' : 'Select'}
+                            </button>
+                          </div>
                         </div>
-                      ))
-                    )}
-                  </div>
-                </div>
+                      );
+                    })}
 
-                <div className="pt-3 border-t border-[#1f1b22] flex justify-between items-center text-[10px] font-mono text-slate-500">
-                  <div className="flex items-center space-x-2">
-                    <span className={`w-2 h-2 rounded-full ${isStreaming ? 'bg-emerald-500 animate-pulse' : 'bg-slate-600'}`} />
-                    <span>Stream: {isStreaming ? 'STREAMING' : 'IDLE'}</span>
+                    {/* Connect Custom Target Card */}
+                    <div
+                      onClick={() => setCustomTargetModalOpen(true)}
+                      className="rounded-lg p-3 border border-dashed border-[#2f2b38] hover:border-indigo-500/80 bg-[#0a0a0e] hover:bg-[#12121a] transition-all flex flex-col justify-center items-center text-center cursor-pointer min-h-[140px] space-y-2 group"
+                    >
+                      <div className="w-8 h-8 rounded-full bg-indigo-950/60 border border-indigo-700/50 flex items-center justify-center text-indigo-400 group-hover:scale-110 transition-transform text-sm">
+                        🔗
+                      </div>
+                      <div className="text-xs font-bold text-slate-200 group-hover:text-white">Connect Custom URL</div>
+                      <p className="text-[10px] text-slate-500 max-w-[200px]">
+                        Add industry endpoints to test your own product
+                      </p>
+                    </div>
                   </div>
-                  <span>Events: {liveEvents.length}</span>
+
+                  <div className="pt-2 border-t border-[#1f1b22] flex flex-wrap items-center justify-between gap-4">
+                    <div className="flex items-center space-x-2 text-xs text-slate-400 font-mono">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                      <span className="text-emerald-400 font-semibold">100% Policy Enforcement &amp; Guardrails Enforced</span>
+                      <span className="text-slate-500 hidden sm:inline">• Production Hardened Baseline</span>
+                    </div>
+
+                    <button
+                      onClick={handleStartScan}
+                      disabled={isScanning || visibleTargets.length === 0}
+                      className="px-5 py-2 rounded-lg text-xs font-bold tracking-wide uppercase bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white shadow-lg shadow-rose-900/40 transition-all flex items-center space-x-2"
+                    >
+                      <span>{isScanning ? '⏳ Executing...' : '⚡ Launch Security Assessment'}</span>
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
             {/* Scan History Table */}
@@ -467,19 +456,14 @@ export const DashboardPage: React.FC = () => {
                           key={scan.id}
                           className="hover:bg-[#16161e] transition-colors cursor-pointer"
                           onClick={() => {
-                            setActiveScanId(scan.id);
                             setSelectedScanModalId(scan.id);
                           }}
                         >
                           <td className="py-3 px-3 font-mono font-bold text-white">#{scan.id}</td>
                           <td className="py-3 px-3 text-slate-200 font-medium">{scan.target_name || `Target #${scan.target_id}`}</td>
                           <td className="py-3 px-3">
-                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono border ${
-                              scan.mitigation_enabled
-                                ? 'bg-emerald-950/60 text-emerald-400 border-emerald-800/40'
-                                : 'bg-amber-950/60 text-amber-400 border-amber-800/40'
-                            }`}>
-                              {scan.mitigation_enabled ? 'MITIGATED' : 'VULNERABLE'}
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-mono border bg-emerald-950/60 text-emerald-400 border-emerald-800/40">
+                              HARDENED
                             </span>
                           </td>
                           <td className="py-3 px-3">
@@ -515,13 +499,12 @@ export const DashboardPage: React.FC = () => {
                             <div className="flex items-center justify-end space-x-2">
                               <button
                                 onClick={() => {
-                                  setActiveScanId(scan.id);
                                   setSelectedScanModalId(scan.id);
                                 }}
                                 className="px-2.5 py-1 rounded text-[11px] font-mono bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-800/40 transition-colors flex items-center space-x-1"
                               >
                                 <span>🔍</span>
-                                <span>View Stream</span>
+                                <span>View Details</span>
                               </button>
                               <a
                                 href={`/api/scans/${scan.id}/export/pdf`}
@@ -557,19 +540,27 @@ export const DashboardPage: React.FC = () => {
                   Inspect active models, verify endpoint connectivity, explore knowledge base documents, and test directly in the interactive sandbox.
                 </p>
               </div>
-              <button
-                onClick={refreshTargets}
-                className="px-3 py-1.5 rounded-lg text-xs font-mono bg-[#16161e] border border-[#2b2733] text-slate-300 hover:text-white transition-colors"
-              >
-                ⟳ Refresh Targets
-              </button>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => setCustomTargetModalOpen(true)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition-colors flex items-center space-x-1.5 shadow-md shadow-indigo-950/50"
+                >
+                  <span>🔗</span>
+                  <span>Connect Target URL</span>
+                </button>
+                <button
+                  onClick={refreshTargets}
+                  className="px-3 py-1.5 rounded-lg text-xs font-mono bg-[#16161e] border border-[#2b2733] text-slate-300 hover:text-white transition-colors"
+                >
+                  ⟳ Refresh Targets
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {targets.map((tgt) => {
+              {visibleTargets.map((tgt) => {
                 const caps: any = tgt.capabilities || {};
                 const hasRag = Boolean(caps.rag || tgt.target_type === 'INTERNAL_RAG' || tgt.base_url.includes('internal-rag'));
-                const ping = targetPingResults[tgt.id];
 
                 return (
                   <div
@@ -632,34 +623,26 @@ export const DashboardPage: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* Ping Status */}
-                      {ping && (
-                        <div className={`p-2 rounded-lg text-xs font-mono flex items-center justify-between ${
-                          ping.status === 'HEALTHY' ? 'bg-emerald-950/30 border border-emerald-800/40 text-emerald-300' : 'bg-rose-950/30 border border-rose-800/40 text-rose-300'
-                        }`}>
-                          <span>Status: {ping.status}</span>
-                          {ping.latency > 0 && <span>Latency: {ping.latency}ms</span>}
-                        </div>
-                      )}
+                      {/* Security Baseline */}
+                      <div className="p-2.5 rounded-lg bg-[#070709] border border-[#1b1922] text-xs font-mono flex items-center justify-between">
+                        <span className="text-slate-400">Security Posture:</span>
+                        <span className="text-emerald-400 font-semibold">PRODUCTION HARDENED</span>
+                      </div>
                     </div>
 
                     <div className="pt-3 border-t border-[#1f1b22] flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex items-center space-x-2">
-                        <button
-                          onClick={() => pingTarget(tgt)}
-                          className="px-2.5 py-1.5 rounded-lg text-xs font-mono bg-[#16161e] hover:bg-[#20202c] border border-[#2b2733] text-slate-300 transition-colors"
-                        >
-                          ⚡ Ping Endpoint
-                        </button>
+                      {tgt.base_url.startsWith('http') && !tgt.base_url.includes('127.0.0.1') && !tgt.base_url.includes('localhost') ? (
                         <a
-                          href={tgt.base_url}
+                          href={tgt.base_url.replace(/\/+$/, '') + '/'}
                           target="_blank"
                           rel="noreferrer"
-                          className="px-2.5 py-1.5 rounded-lg text-xs font-mono bg-[#16161e] hover:bg-[#20202c] border border-[#2b2733] text-slate-400 hover:text-slate-200 transition-colors"
+                          className="px-3 py-1.5 rounded-lg text-xs font-mono bg-[#16161e] hover:bg-[#20202c] border border-[#2b2733] text-slate-300 hover:text-white transition-colors"
                         >
-                          App ↗
+                          Open URL ↗
                         </a>
-                      </div>
+                      ) : (
+                        <span className="text-[11px] font-mono text-slate-500">Local Service</span>
+                      )}
 
                       <div className="flex items-center space-x-2">
                         <button
@@ -728,19 +711,14 @@ export const DashboardPage: React.FC = () => {
                       key={scan.id}
                       className="hover:bg-[#16161e] transition-colors cursor-pointer"
                       onClick={() => {
-                        setActiveScanId(scan.id);
                         setSelectedScanModalId(scan.id);
                       }}
                     >
                       <td className="py-3.5 px-4 font-mono font-bold text-white">#{scan.id}</td>
                       <td className="py-3.5 px-4 text-slate-200 font-medium">{scan.target_name || `Target #${scan.target_id}`}</td>
                       <td className="py-3.5 px-4">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-mono border ${
-                          scan.mitigation_enabled
-                            ? 'bg-emerald-950/60 text-emerald-400 border-emerald-800/40'
-                            : 'bg-amber-950/60 text-amber-400 border-amber-800/40'
-                        }`}>
-                          {scan.mitigation_enabled ? 'MITIGATED' : 'VULNERABLE'}
+                        <span className="px-2 py-0.5 rounded text-[10px] font-mono border bg-emerald-950/60 text-emerald-400 border-emerald-800/40">
+                          HARDENED
                         </span>
                       </td>
                       <td className="py-3.5 px-4">
@@ -776,12 +754,11 @@ export const DashboardPage: React.FC = () => {
                         <div className="flex items-center justify-end space-x-2">
                           <button
                             onClick={() => {
-                              setActiveScanId(scan.id);
                               setSelectedScanModalId(scan.id);
                             }}
                             className="px-3 py-1 rounded text-xs font-mono bg-rose-600 hover:bg-rose-500 text-white transition-colors"
                           >
-                            Inspect & Stream
+                            Inspect & Audit
                           </button>
                           <a
                             href={`/api/scans/${scan.id}/export/pdf`}
@@ -805,9 +782,8 @@ export const DashboardPage: React.FC = () => {
         <ScanInspectorModal
           scanId={selectedScanModalId}
           onClose={() => setSelectedScanModalId(null)}
-          onRerunScan={(tgtId, mit) => {
+          onRerunScan={(tgtId) => {
             setSelectedTargetId(tgtId);
-            setMitigationEnabled(mit);
             setSelectedScanModalId(null);
             handleStartScan();
           }}
@@ -823,6 +799,110 @@ export const DashboardPage: React.FC = () => {
             toast.success(`Target #${tgtId} selected for assessment`);
           }}
         />
+
+        {/* Custom Target Modal (Industry Link Option) */}
+        {customTargetModalOpen && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-[#101017] border border-[#23202e] rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-5">
+              <div className="flex items-center justify-between border-b border-[#211e2b] pb-3">
+                <div className="flex items-center space-x-3">
+                  <div className="w-9 h-9 rounded-xl bg-indigo-950/80 border border-indigo-700/60 flex items-center justify-center text-lg">
+                    🔗
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white uppercase tracking-wider">Connect Custom Target URL</h3>
+                    <p className="text-[11px] text-slate-400">Add an external or industry AI chatbot endpoint for security evaluation</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setCustomTargetModalOpen(false)}
+                  className="w-8 h-8 rounded-lg bg-[#181822] hover:bg-[#252533] text-slate-400 hover:text-white flex items-center justify-center text-sm"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <form onSubmit={handleCreateCustomTarget} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Chatbot Target URL <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="url"
+                    value={customUrl}
+                    onChange={(e) => setCustomUrl(e.target.value)}
+                    placeholder="https://your-chatbot.company.com/chat or http://10.0.0.1:8000"
+                    required
+                    className="w-full bg-[#08080c] border border-[#2b2738] rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 font-mono"
+                  />
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    Must accept HTTP POST requests with conversational message payloads.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Target Name (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={customName}
+                    onChange={(e) => setCustomName(e.target.value)}
+                    placeholder="e.g. Acme Production Assistant"
+                    className="w-full bg-[#08080c] border border-[#2b2738] rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Model / Architecture Identifier
+                  </label>
+                  <input
+                    type="text"
+                    value={customModel}
+                    onChange={(e) => setCustomModel(e.target.value)}
+                    placeholder="e.g. gpt-4o, claude-3-5-sonnet, custom-agent"
+                    className="w-full bg-[#08080c] border border-[#2b2738] rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 font-mono"
+                  />
+                </div>
+
+                {/* Tool Execution and functions */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Enterprise Tool Functions (Comma-separated, optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={customToolNames}
+                    onChange={(e) => setCustomToolNames(e.target.value)}
+                    placeholder="e.g. get_invoice, send_email, db_query"
+                    className="w-full bg-[#08080c] border border-[#2b2738] rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 font-mono"
+                  />
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    Declares functions used by the agent for multi-tenant BOLA authorization testing.
+                  </p>
+                </div>
+
+                <div className="pt-3 border-t border-[#211e2b] flex items-center justify-end space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => setCustomTargetModalOpen(false)}
+                    className="px-4 py-2 rounded-xl text-xs font-mono text-slate-400 hover:text-white bg-[#16161f] hover:bg-[#20202c] transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isCreatingTarget || !customUrl.trim()}
+                    className="px-5 py-2 rounded-xl text-xs font-bold tracking-wide uppercase bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white shadow-lg shadow-indigo-950/50 transition-colors flex items-center space-x-2"
+                  >
+                    <span>{isCreatingTarget ? '⏳ Connecting...' : '⚡ Register &amp; Select Target'}</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );

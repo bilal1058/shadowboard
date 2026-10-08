@@ -1,8 +1,21 @@
 import os
 import sys
+from pathlib import Path
+from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
 from pydantic import Field, field_validator
 from typing import Optional, List
+
+# Search and load environment variables into os.environ (outside pytest)
+_is_test = "pytest" in sys.modules or os.getenv("APP_ENV") == "test" or "PYTEST_CURRENT_TEST" in os.environ
+if not _is_test:
+    _root_dir = Path(__file__).resolve().parent.parent.parent.parent
+    _backend_dir = Path(__file__).resolve().parent.parent.parent
+    for _env_file in [_root_dir / ".env", _backend_dir / ".env", Path(".env"), Path("backend/.env")]:
+        if _env_file.exists():
+            load_dotenv(_env_file, override=False)
+
+
 
 
 class Settings(BaseSettings):
@@ -85,4 +98,11 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+if not _is_test:
+    if settings.GROQ_API_KEY and not os.environ.get("GROQ_API_KEY"):
+        os.environ["GROQ_API_KEY"] = settings.GROQ_API_KEY
+    if settings.OPENROUTER_API_KEY and not os.environ.get("OPENROUTER_API_KEY"):
+        os.environ["OPENROUTER_API_KEY"] = settings.OPENROUTER_API_KEY
+
 

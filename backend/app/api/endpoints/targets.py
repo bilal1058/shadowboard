@@ -12,23 +12,22 @@ from app.core.ssrf import validate_target_url, safe_http_get_json, SSRFValidatio
 router = APIRouter(prefix="/targets", tags=["Targets"])
 
 DEFAULT_TARGET = {
-    "name": "Meridian Support AI (Reference Target)",
-    "base_url": "http://127.0.0.1:8000/target-app",
+    "name": "Meridian Enterprise Assistant (Reference Target)",
+    "base_url": "http://127.0.0.1:8000/internal-rag",
     "model_name": "qwen-flash",
-    "target_type": "EXTERNAL_SUPPORT",
+    "target_type": "INTERNAL_RAG",
     "target_mode": "INSTRUMENTED",
     "capabilities": {
         "chat": True,
-        "rag": False,
-        "tools": False,
-        "data_access": False,
-        "tool_names": []
+        "rag": True,
+        "tools": True,
+        "data_access": True,
+        "tool_names": ["get_invoice", "send_email"]
     }
 }
 
 class ConnectionCheckRequest(BaseModel):
     base_url: str
-    allow_local: bool = False
 
 def _is_exact_local_reference(base_url: str) -> bool:
     parsed = urlparse(base_url)
@@ -38,15 +37,14 @@ def _is_exact_local_reference(base_url: str) -> bool:
 async def test_connection(request: ConnectionCheckRequest):
     """Validate a target by reading its real health and contract endpoints with SSRF protections."""
     is_local_ref = _is_exact_local_reference(request.base_url)
-    effective_allow_local = request.allow_local or is_local_ref
     try:
-        validated_base = validate_target_url(request.base_url, allow_local=effective_allow_local)
+        validated_base = validate_target_url(request.base_url, allow_local=is_local_ref)
     except SSRFValidationError as exc:
         raise HTTPException(status_code=400, detail=f"SSRF validation blocked target URL: {exc}")
 
     try:
-        health_data = await safe_http_get_json(f"{validated_base}/health", allow_local=effective_allow_local)
-        contract_data = await safe_http_get_json(f"{validated_base}/contract", allow_local=effective_allow_local)
+        health_data = await safe_http_get_json(f"{validated_base}/health", allow_local=is_local_ref)
+        contract_data = await safe_http_get_json(f"{validated_base}/contract", allow_local=is_local_ref)
     except SSRFValidationError as exc:
         raise HTTPException(status_code=422, detail=f"Target connection or validation failed: {exc}")
 
@@ -65,8 +63,14 @@ async def create_target(target: TargetContract, db: aiosqlite.Connection = Depen
         "INSERT INTO targets (name, base_url, model_name, target_type, target_mode, capabilities_json) VALUES (?, ?, ?, ?, ?, ?)",
         (target.name, validated_base, target.model_name, target.target_type, target.target_mode, json.dumps(target.capabilities.model_dump()))
     )
-    await db.commit()
     target_id = cursor.lastrowid
+    from app.api.endpoints.policies import default_policy_for_target_type
+    policy_data = default_policy_for_target_type(target.target_type)
+    await db.execute(
+        "INSERT INTO policies (target_id, policy_json, taxonomy, taxonomy_version) VALUES (?, ?, ?, ?)",
+        (target_id, json.dumps(policy_data), "OWASP", "2025")
+    )
+    await db.commit()
     return TargetResponse(
         id=target_id,
         name=target.name,

@@ -259,7 +259,26 @@ async def chat(
             else:
                 response_text = f"Tool Authorization Refusal: {tool_result['error']}"
         else:
-            response_text = f"Meridian Agent Response: Processed query: '{prompt}' under session {session_uid}."
+            groq_key = os.getenv("GROQ_API_KEY")
+            real_resp = None
+            if groq_key:
+                try:
+                    from groq import Groq
+                    gc = Groq(api_key=groq_key, timeout=6.0, max_retries=1)
+                    res = gc.chat.completions.create(
+                        model="qwen/qwen3.8-27b",
+                        messages=[
+                            {"role": "system", "content": f"You are Meridian Agent, an enterprise assistant operating under authenticated session {session_uid}. Answer employee inquiries helpfully."},
+                            {"role": "user", "content": prompt}
+                        ],
+                        max_tokens=300,
+                        temperature=0.2
+                    )
+                    real_resp = res.choices[0].message.content
+                except Exception:
+                    pass
+            response_text = real_resp or f"Meridian Agent Response: Processed query: '{prompt}' under session {session_uid}."
+
 
         return ChatResponse(
             response=response_text,

@@ -72,13 +72,31 @@ async def _seed_default_targets(db):
             "name": "Meridian Support Assistant",
             "base_url": os.getenv("TARGET_APP_URL", "http://127.0.0.1:8000/target-app"),
             "target_type": "EXTERNAL_SUPPORT",
-            "capabilities": {"chat": True, "rag": False, "tools": True, "data_access": True, "has_rag": False, "has_tools": True, "has_memory": False, "tool_names": ["get_invoice"]},
+            "capabilities": {
+                "chat": True,
+                "rag": False,
+                "tools": True,
+                "data_access": True,
+                "has_rag": False,
+                "has_tools": True,
+                "has_memory": False,
+                "tool_names": ["get_invoice"],
+            },
         },
         {
-            "name": "Meridian Internal Knowledge Assistant",
+            "name": "Meridian Enterprise Assistant",
             "base_url": "http://127.0.0.1:8000/internal-rag",
             "target_type": "INTERNAL_RAG",
-            "capabilities": {"chat": True, "rag": True, "tools": False, "data_access": False, "has_rag": True, "has_tools": False, "has_memory": False, "tool_names": []},
+            "capabilities": {
+                "chat": True,
+                "rag": True,
+                "tools": True,
+                "data_access": True,
+                "has_rag": True,
+                "has_tools": True,
+                "has_memory": False,
+                "tool_names": ["get_invoice", "send_email"],
+            },
         },
     ]
     for target in reference_targets:
@@ -104,24 +122,6 @@ async def _seed_default_targets(db):
             "INSERT INTO target_security_config (target_id, mitigation_enabled) VALUES (?, FALSE) "
             "ON CONFLICT(target_id) DO NOTHING",
             (target_id,),
-        )
-    cursor = await db.execute("SELECT COUNT(*) FROM scan_runs;")
-    if (await cursor.fetchone())[0] == 0:
-        await db.execute(
-            "INSERT INTO scan_runs (id, target_id, status, overall_score, risk_grade, started_at, completed_at) "
-            "VALUES (1, 1, 'COMPLETED', 85, 'B', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
-        )
-        await db.execute(
-            "INSERT INTO scan_runs (id, target_id, status, overall_score, risk_grade, started_at, completed_at) "
-            "VALUES (2, 2, 'COMPLETED', 75, 'C', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
-        )
-        await db.execute(
-            "INSERT INTO findings (scan_id, finding_id, owasp_category, status, attack_outcome, evidence_status, confidence, severity, evidence_json, evidence_hash, remediation) "
-            "VALUES (1, 'FND-INIT-001', 'LLM01', 'PASS', 'BLOCKED', 'SUFFICIENT', 0.90, 'LOW', '{}', 'hash001', 'Maintain system prompt boundaries.')"
-        )
-        await db.execute(
-            "INSERT INTO findings (scan_id, finding_id, owasp_category, status, attack_outcome, evidence_status, confidence, severity, evidence_json, evidence_hash, remediation) "
-            "VALUES (2, 'FND-INIT-002', 'LLM02', 'CONFIRMED', 'COMPLIED', 'SUFFICIENT', 0.95, 'HIGH', '{}', 'hash002', 'Enforce tenant isolation on tool calls.')"
         )
     await db.commit()
 

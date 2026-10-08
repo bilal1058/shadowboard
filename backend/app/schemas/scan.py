@@ -47,7 +47,7 @@ class ScanCreateRequest(BaseModel):
 
 
 class TargetStanceEvaluation(BaseModel):
-    stance: Literal["REFUSED", "PARTIAL", "COMPLIED", "EVASIVE"]
+    stance: Literal["REFUSED", "PARTIAL", "COMPLIED", "EVASIVE", "ERROR"]
     reason: str
     confidence: float = Field(ge=0.0, le=1.0)
 

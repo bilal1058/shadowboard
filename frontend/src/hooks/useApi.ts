@@ -14,6 +14,7 @@ export function useTargets() {
   const loadTargets = async () => {
     try {
       setLoading(true);
+      setError(null);
       const data = await api.get<{ id: number; name: string; base_url: string; target_type: string; capabilities: Record<string, unknown> }[]>('/targets');
       setTargets(data);
     } catch (err) {
