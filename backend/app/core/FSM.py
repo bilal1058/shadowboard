@@ -506,15 +506,30 @@ class FSMStanceClassifier:
         
         Returns ObservationRecord with: previous_strategy, decision, decision_reason
         """
-        transitions = FAMILY_TRANSITIONS.get(family, {})
-        stance_transitions = transitions.get(stance, {})
-        next_strategy = stance_transitions.get(current_strategy, current_strategy)
-        
-        # If no transition found, stay on current strategy
-        if not next_strategy or next_strategy == current_strategy:
-            # Try a default fallback
-            all_strategies = list(stance_transitions.values())
-            next_strategy = all_strategies[0] if all_strategies else current_strategy
+        # For COMPLIED stance: if verifier needs further confirmation, pivot to targeted verification strategy
+        if stance == "COMPLIED":
+            confirmation_map = {
+                "injection": "instruction_hierarchy_confusion",
+                "leakage": "canary_leakage_coercion",
+                "agency": "direct_idor_tampering",
+            }
+            conf_strat = confirmation_map.get(family, "direct_instruction_override")
+            if current_strategy == conf_strat:
+                next_strategy = "polyglot_encoding_smuggling" if family == "injection" else (
+                    "memory_dump_simulation" if family == "leakage" else "parameter_pollution"
+                )
+            else:
+                next_strategy = conf_strat
+        else:
+            transitions = FAMILY_TRANSITIONS.get(family, {})
+            stance_transitions = transitions.get(stance, {})
+            next_strategy = stance_transitions.get(current_strategy, current_strategy)
+            
+            # If no transition found, stay on current strategy
+            if not next_strategy or next_strategy == current_strategy:
+                # Try a default fallback
+                all_strategies = list(stance_transitions.values())
+                next_strategy = all_strategies[0] if all_strategies else current_strategy
 
         return ObservationRecord(
             previous_strategy=current_strategy,

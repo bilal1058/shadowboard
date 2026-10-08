@@ -42,6 +42,7 @@ class TaxonomyReference(BaseModel):
 class ScanCreateRequest(BaseModel):
     target_id: int
     scan_mode: ExecutionMode = "INSTRUMENTED"
+    mitigation_enabled: Optional[bool] = None
     session_identities: Optional[List[str]] = None
     foreign_tenants: Optional[List[str]] = None
 

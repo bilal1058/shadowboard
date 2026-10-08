@@ -16,6 +16,16 @@ def test_export_scan_pdf_report(client):
     resp = client.get("/api/scans")
     assert resp.status_code == 200
     scans = resp.json()
+    if not scans:
+        import sqlite3
+        from app.db.session import DB_PATH
+        conn = sqlite3.connect(DB_PATH)
+        conn.execute("INSERT OR IGNORE INTO targets (id, name, base_url, model_name, capabilities_json) VALUES (1, 'Meridian Target', 'http://127.0.0.1:8000/internal-rag', 'qwen-flash', '{}')")
+        conn.execute("INSERT OR REPLACE INTO scan_runs (id, target_id, status, overall_score, risk_grade) VALUES (999, 1, 'COMPLETED', 90, 'A')")
+        conn.commit()
+        conn.close()
+        resp = client.get("/api/scans")
+        scans = resp.json()
     assert len(scans) > 0, "Expected at least one historical scan"
     scan_id = scans[0]["id"]
 

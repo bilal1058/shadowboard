@@ -14,7 +14,8 @@ router = APIRouter(prefix="/evidence", tags=["Verifiable Evidence"])
 
 class VerifyEvidenceRequest(BaseModel):
     package_data: Dict[str, Any]
-    enforce_active_key: bool = False
+    mode: str = "TRUSTED_SIGNER"  # TRUSTED_SIGNER | HISTORICAL_SIGNER | CRYPTOGRAPHIC_ONLY
+    enforce_active_key: bool = True
 
 
 class RevokeKeyRequest(BaseModel):
@@ -79,10 +80,11 @@ async def get_evidence_package(finding_id: str, db: aiosqlite.Connection = Depen
     cursor = await db.execute(
         """
         SELECT f.scan_id, f.finding_id, f.owasp_category, f.status, f.severity, f.remediation, f.evidence_json, f.evidence_hash,
-               s.target_id, t.name, t.target_mode
+               s.target_id, t.name, t.target_mode, f.objective_id, ao.policy_rule_id
         FROM findings f
         JOIN scan_runs s ON f.scan_id = s.id
         JOIN targets t ON s.target_id = t.id
+        LEFT JOIN attack_objectives ao ON f.objective_id = ao.id
         WHERE f.finding_id = ?
         """,
         (finding_id,)
@@ -97,41 +99,68 @@ async def get_evidence_package(finding_id: str, db: aiosqlite.Connection = Depen
     status = row[3]
     severity = row[4]
     remediation = row[5]
-    evidence_json = json.loads(row[6]) if isinstance(row[6], str) else row[6]
+    evidence_json = json.loads(row[6]) if isinstance(row[6], str) else (row[6] or {})
     target_id = row[8]
     target_name = row[9]
     target_mode = row[10]
+    objective_id = row[11] if len(row) > 11 else None
+    rule_id = row[12] if len(row) > 12 and row[12] else finding_id
 
-    # Fetch attempts / execution events for this scan
-    att_cursor = await db.execute(
-        "SELECT prompt_text, response_text, strategy FROM attack_attempts WHERE scan_id = ? ORDER BY id ASC LIMIT 5",
-        (scan_id,)
-    )
+    # Fetch attempts strictly matching the finding's objective provenance
+    if objective_id:
+        att_cursor = await db.execute(
+            """
+            SELECT id, prompt_text, response_text, strategy, turn_number
+            FROM attack_attempts
+            WHERE objective_id = ?
+            ORDER BY turn_number ASC, id ASC
+            """,
+            (objective_id,)
+        )
+    else:
+        att_cursor = await db.execute(
+            """
+            SELECT id, prompt_text, response_text, strategy, turn_number
+            FROM attack_attempts
+            WHERE scan_id = ?
+            ORDER BY id ASC
+            """,
+            (scan_id,)
+        )
     att_rows = await att_cursor.fetchall()
-    prompts = [r[0] for r in att_rows] if att_rows else ["Audited attack sequence probe."]
-    strategies = [r[2] for r in att_rows] if att_rows else ["adaptive_fsm"]
-    last_response = att_rows[-1][1] if att_rows else "Audited target output."
+    attempt_ids = [r[0] for r in att_rows]
+    prompts = [r[1] for r in att_rows] if att_rows else ["Audited attack sequence probe."]
+    strategies = [r[3] for r in att_rows] if att_rows else ["adaptive_fsm"]
+    last_response = att_rows[-1][2] if att_rows else "Audited target output."
 
-    ev_cursor = await db.execute(
-        "SELECT event_type, event_data FROM execution_events WHERE scan_id = ? ORDER BY id ASC LIMIT 10",
-        (scan_id,)
-    )
-    ev_rows = await ev_cursor.fetchall()
+    # Fetch execution events strictly linked to this objective's attempts
     events = []
-    for er in ev_rows:
-        try:
-            ev_data = json.loads(er[1]) if isinstance(er[1], str) else er[1]
-        except Exception:
-            ev_data = {}
-        events.append({"event_type": er[0], "event_data": ev_data})
+    if attempt_ids:
+        placeholders = ",".join("?" for _ in attempt_ids)
+        ev_cursor = await db.execute(
+            f"""
+            SELECT event_type, event_data, source
+            FROM execution_events
+            WHERE attempt_id IN ({placeholders})
+            ORDER BY id ASC
+            """,
+            tuple(attempt_ids)
+        )
+        ev_rows = await ev_cursor.fetchall()
+        for er in ev_rows:
+            try:
+                ev_data = json.loads(er[1]) if isinstance(er[1], str) else (er[1] or {})
+            except Exception:
+                ev_data = {}
+            events.append({"event_type": er[0], "event_data": ev_data, "source": er[2] if len(er) > 2 else "target"})
 
     pkg = EvidenceBundler.create_package(
         scan_id=scan_id,
         target_id=target_id,
         target_name=target_name,
         finding_id=finding_id,
-        rule_id=finding_id,
-        rule_name=f"Policy Assertion: {finding_id}",
+        rule_id=rule_id,
+        rule_name=f"Policy Assertion: {rule_id}",
         severity=severity,
         owasp_category=owasp_cat,
         attack_prompts=prompts,
@@ -154,6 +183,7 @@ def verify_offline_package(request: VerifyEvidenceRequest):
         request.package_data,
         key_registry=registry,
         enforce_active_key=request.enforce_active_key,
+        mode=request.mode,
     )
     return {
         "verified": valid,

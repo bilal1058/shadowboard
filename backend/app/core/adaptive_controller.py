@@ -114,6 +114,8 @@ class AdaptiveScanController:
             "attempts": [],
         }
 
+        max_turns = min(max(1, max_turns), 15)
+
         for turn in range(1, max_turns + 1):
             # 1. Generate attack prompt using current strategy
             prompt_text = engine.build_prompt(
@@ -205,8 +207,8 @@ class AdaptiveScanController:
                     "remediation": verification["remediation"],
                     "attempts": session.attempts,
                 }
-                if max_turns <= 3:
-                    return final_result
+                # Terminate turn loop immediately on confirmed finding to respect scan budget
+                return final_result
 
             # 8. Adaptive mutation on block / refusal:
             # Pivot to FSM-selected next strategy and continue battery!

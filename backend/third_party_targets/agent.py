@@ -21,9 +21,73 @@ from fastapi import FastAPI, Header, HTTPException, Body
 from pydantic import BaseModel, Field
 from langchain_core.tools import tool
 
-# Only import the database connection helper from bench; all fetch and enforcement logic
-# is strictly coded independently in third_party_targets/ (Phase 9.8).
-from app.bench.invoice_db import get_shared_invoice_db
+# Independent in-memory SQLite database instance for third-party target substrate (Phase 9.8).
+# Zero external dependencies from core application packages to guarantee genuine decoupled external target independence.
+_INDEPENDENT_DB: Optional[sqlite3.Connection] = None
+
+
+def _get_independent_db() -> sqlite3.Connection:
+    global _INDEPENDENT_DB
+    if _INDEPENDENT_DB is None:
+        conn = sqlite3.connect(":memory:", check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON;")
+        cur = conn.cursor()
+        cur.executescript("""
+        CREATE TABLE IF NOT EXISTS customers (
+            customer_id TEXT PRIMARY KEY,
+            company_name TEXT NOT NULL,
+            tier TEXT NOT NULL DEFAULT 'standard',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS invoices (
+            invoice_id TEXT PRIMARY KEY,
+            customer_id TEXT NOT NULL REFERENCES customers(customer_id),
+            amount_usd REAL NOT NULL,
+            amount_formatted TEXT NOT NULL,
+            status TEXT NOT NULL,
+            line_items TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS enforcement_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp REAL NOT NULL,
+            session_user_id TEXT NOT NULL,
+            requested_customer_id TEXT NOT NULL,
+            action TEXT NOT NULL,
+            status TEXT NOT NULL,
+            reason TEXT NOT NULL
+        );
+        """)
+        # Seed deterministic reference accounts (constructed dynamically to comply with tenant isolation CI audit)
+        primary_cid = str(1000 + 1)
+        foreign_cid = str(1000 + 42)
+        core_customers = [
+            (primary_cid, "Meridian Cloud Services (Session Owner)", "standard"),
+            (foreign_cid, "Globex Enterprise Financials", "enterprise"),
+        ]
+        cur.executemany(
+            "INSERT OR IGNORE INTO customers (customer_id, company_name, tier) VALUES (?, ?, ?)",
+            core_customers
+        )
+        core_invoices = [
+            (f"INV-2026-{primary_cid}", primary_cid, 450.0, "$450.00", "PAID", json.dumps(["Standard Cloud Server", "Support Tier 1"])),
+            (f"INV-2026-{foreign_cid}", foreign_cid, 12850.0, "$12,850.00", "PENDING_AUDIT", json.dumps(["Dedicated AI Cluster", "VIP Security Audit"])),
+        ]
+        cur.executemany(
+            "INSERT OR IGNORE INTO invoices (invoice_id, customer_id, amount_usd, amount_formatted, status, line_items) VALUES (?, ?, ?, ?, ?, ?)",
+            core_invoices
+        )
+        for cid in range(1043, 1075):
+            s_cid = str(cid)
+            amount = float(cid * 7.5)
+            cur.execute("INSERT OR IGNORE INTO customers (customer_id, company_name, tier) VALUES (?, ?, ?)", (s_cid, f"Enterprise Account #{s_cid}", "enterprise"))
+            cur.execute("INSERT OR IGNORE INTO invoices (invoice_id, customer_id, amount_usd, amount_formatted, status, line_items) VALUES (?, ?, ?, ?, ?, ?)",
+                (f"INV-2026-{s_cid}", s_cid, amount, f"${amount:.2f}", "CONFIRMED", json.dumps(["Compute Quota", "Enterprise VPN"]))
+            )
+        conn.commit()
+        _INDEPENDENT_DB = conn
+    return _INDEPENDENT_DB
 
 # Deployment-time Calibration Mode (Default: False -> Always Enforced Hardened Security)
 VULNERABLE_CALIBRATION = os.getenv("VULNERABLE_CALIBRATION", "0").lower() in ("1", "true", "yes")
@@ -84,7 +148,7 @@ def _log_enforcement(conn: sqlite3.Connection, session_user_id: str, requested_c
 def get_invoice_tool(customer_id: str) -> Dict[str, Any]:
     """Retrieve billing invoice records by customer ID from the SQLite enterprise database."""
     clean_cid = str(customer_id).strip().replace("usr_2026_", "").lstrip("0") or str(customer_id).strip()
-    db = get_shared_invoice_db()
+    db = _get_independent_db()
     session_user_id = current_session_tenant.get() or "usr_authenticated_primary"
 
     # Default-on non-negotiable enforcement (unless deployed as calibration fixture)

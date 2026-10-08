@@ -473,3 +473,94 @@ def test_api_verify_package_endpoint():
     assert res_tampered.status_code == 200
     res_tampered_data = res_tampered.json()
     assert res_tampered_data["verified"] is False
+
+
+def test_tampering_severity_and_substrate_truth_detected():
+    """Verify that tampering with severity or substrate_truth_level invalidates Ed25519 signature."""
+    pkg = EvidenceBundler.create_package(
+        scan_id=108,
+        target_id=1,
+        target_name="Production Agent",
+        finding_id="FND-08",
+        rule_id="RULE-08",
+        rule_name="Severity & Substrate Truth Sealing",
+        severity="LOW",
+        owasp_category="LLM04",
+        attack_prompts=["probe"],
+        strategies_used=["probe"],
+        response_text="Legitimate Response",
+        execution_events=[],
+        violation_details={},
+        remediation_text="fix",
+        substrate_truth_level="PROXY_OBSERVED",
+    )
+    pkg_data = json.loads(pkg.to_json())
+
+    # 1. Authentic package passes
+    valid, _, summary = StandaloneVerifier.verify_package(pkg_data)
+    assert valid is True
+    assert summary["substrate_truth_level"] == "PROXY_OBSERVED"
+
+    # 2. Tamper severity from LOW to CRITICAL -> MUST FAIL
+    tampered_sev = json.loads(pkg.to_json())
+    tampered_sev["severity"] = "CRITICAL"
+    valid_sev, msg_sev, _ = StandaloneVerifier.verify_package(tampered_sev)
+    assert valid_sev is False
+    assert "Invalid Ed25519 digital signature" in msg_sev
+
+    # 3. Tamper substrate_truth_level from PROXY_OBSERVED to TARGET_INSTRUMENTED -> MUST FAIL
+    tampered_truth = json.loads(pkg.to_json())
+    tampered_truth["proof"]["substrate_truth_level"] = "TARGET_INSTRUMENTED"
+    tampered_truth["substrate_truth_level"] = "TARGET_INSTRUMENTED"
+    valid_truth, msg_truth, _ = StandaloneVerifier.verify_package(tampered_truth)
+    assert valid_truth is False
+    assert "Invalid Ed25519 digital signature" in msg_truth
+
+
+def test_untrusted_signer_key_rejected_by_default():
+    """Verify that packages signed by keys outside the trusted KeyRegistry are rejected by default."""
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+    untrusted_key = ed25519.Ed25519PrivateKey.generate()
+
+    # Create package with untrusted key
+    pkg = EvidenceBundler.create_package(
+        scan_id=109,
+        target_id=1,
+        target_name="Production Agent",
+        finding_id="FND-09",
+        rule_id="RULE-09",
+        rule_name="Untrusted Key Check",
+        severity="HIGH",
+        owasp_category="LLM01",
+        attack_prompts=["probe"],
+        strategies_used=["probe"],
+        response_text="Response",
+        execution_events=[],
+        violation_details={},
+        remediation_text="fix",
+        signing_key=untrusted_key,
+        key_id="rogue_external_key_999",
+    )
+    pkg_data = json.loads(pkg.to_json())
+
+    # Create an empty / separate key registry without this rogue key
+    clean_reg = KeyRegistry()
+    clean_reg._keys.clear()
+
+    # TRUSTED_SIGNER mode rejects untrusted key
+    valid, msg, summary = StandaloneVerifier.verify_package(
+        pkg_data,
+        key_registry=clean_reg,
+        mode="TRUSTED_SIGNER",
+    )
+    assert valid is False
+    assert "not registered in trusted key registry" in msg
+    assert summary["verification_status"] == "KEY_NOT_REGISTERED"
+
+    # CRYPTOGRAPHIC_ONLY mode validates mathematical signature
+    valid_crypto, _, _ = StandaloneVerifier.verify_package(
+        pkg_data,
+        key_registry=clean_reg,
+        mode="CRYPTOGRAPHIC_ONLY",
+    )
+    assert valid_crypto is True

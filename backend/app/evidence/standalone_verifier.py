@@ -18,6 +18,7 @@ from cryptography.hazmat.primitives.asymmetric import ed25519
 from cryptography.exceptions import InvalidSignature
 
 from app.evidence.merkle import MerkleTree
+from app.evidence.key_registry import get_active_key_registry
 
 
 class StandaloneVerifier:
@@ -44,8 +45,15 @@ class StandaloneVerifier:
         pkg_data: Dict[str, Any],
         key_registry: Optional[Any] = None,
         enforce_active_key: bool = False,
+        mode: str = "TRUSTED_SIGNER",
     ) -> Tuple[bool, str, Dict[str, Any]]:
-        """Verifies package integrity and Ed25519 signature, returning (is_valid, message, audit_summary)."""
+        """Verifies package integrity and Ed25519 signature, returning (is_valid, message, audit_summary).
+        
+        Verification modes:
+        - TRUSTED_SIGNER (default): Requires signature from active, non-revoked key in trusted registry.
+        - HISTORICAL_SIGNER: Allows packages signed prior to key revocation.
+        - CRYPTOGRAPHIC_ONLY: Verifies digital signature math using package's embedded public key.
+        """
         proof = pkg_data.get("proof", {})
         if not proof:
             return False, "Missing cryptographic proof block in evidence package", {}
@@ -58,6 +66,7 @@ class StandaloneVerifier:
         key_id = proof.get("key_id", "sb_key_primary")
         legacy_sig = proof.get("package_signature")
         substrate_truth = proof.get("substrate_truth_level", "UNKNOWN")
+        timestamp_utc = proof.get("timestamp_utc", 0.0)
 
         # -------------------------------------------------------------
         # 1. Integrity Verification (Linear Merkle Event Chain)
@@ -99,54 +108,82 @@ class StandaloneVerifier:
             return False, f"Integrity Failure: Manifest hash mismatch! Claimed: {claimed_manifest_hash}, Computed: {recomputed_manifest_hash}", {}
 
         # -------------------------------------------------------------
-        # 3. Key Registry & Revocation Verification (PKI Validation)
+        # 3. Key Registry & Trust Verification (PKI Validation)
         # -------------------------------------------------------------
-        key_record = None
-        if key_registry is not None:
-            key_record = key_registry.get_key(key_id)
-            if key_record:
-                if key_record.status == "REVOKED":
-                    reason = key_record.revocation_reason or "Key revoked by administrator"
-                    return False, f"Authenticity Failure: Signing key '{key_id}' has been REVOKED! ({reason})", {
-                        "verification_status": "KEY_REVOKED",
-                        "key_id": key_id,
-                        "revocation_reason": reason,
-                    }
-                if enforce_active_key and key_record.status != "ACTIVE":
-                    return False, f"Authenticity Failure: Signing key '{key_id}' is not ACTIVE (status: {key_record.status})", {
-                        "verification_status": "KEY_NOT_ACTIVE",
-                        "key_id": key_id,
-                    }
-                if pubkey_hex and key_record.public_key_hex.lower() != pubkey_hex.lower():
-                    return False, f"Authenticity Failure: Public key mismatch for registered key_id '{key_id}'!", {
-                        "verification_status": "KEY_MISMATCH",
-                        "key_id": key_id,
-                    }
-            elif enforce_active_key:
+        effective_mode = "TRUSTED_SIGNER" if enforce_active_key else mode
+        registry = key_registry or (get_active_key_registry() if effective_mode in ("TRUSTED_SIGNER", "HISTORICAL_SIGNER") else None)
+        key_record = registry.get_key(key_id) if registry is not None else None
+
+        if effective_mode == "TRUSTED_SIGNER":
+            if not key_record:
                 return False, f"Authenticity Failure: Signing key '{key_id}' is not registered in trusted key registry!", {
                     "verification_status": "KEY_NOT_REGISTERED",
                     "key_id": key_id,
                 }
+            if key_record.status == "REVOKED":
+                reason = key_record.revocation_reason or "Key revoked by administrator"
+                return False, f"Authenticity Failure: Signing key '{key_id}' has been REVOKED! ({reason})", {
+                    "verification_status": "KEY_REVOKED",
+                    "key_id": key_id,
+                    "revocation_reason": reason,
+                }
+            if key_record.status != "ACTIVE":
+                return False, f"Authenticity Failure: Signing key '{key_id}' is not ACTIVE (status: {key_record.status})", {
+                    "verification_status": "KEY_NOT_ACTIVE",
+                    "key_id": key_id,
+                }
+            if pubkey_hex and key_record.public_key_hex.lower() != pubkey_hex.lower():
+                return False, f"Authenticity Failure: Public key mismatch for registered key_id '{key_id}'!", {
+                    "verification_status": "KEY_MISMATCH",
+                    "key_id": key_id,
+                }
+        elif effective_mode == "HISTORICAL_SIGNER":
+            if not key_record:
+                return False, f"Authenticity Failure: Signing key '{key_id}' not found in historical keyring!", {
+                    "verification_status": "KEY_NOT_REGISTERED",
+                    "key_id": key_id,
+                }
+            if key_record.status == "REVOKED":
+                revoked_at = key_record.revoked_at or 0.0
+                if timestamp_utc > revoked_at:
+                    return False, f"Authenticity Failure: Package signed after key '{key_id}' was revoked!", {
+                        "verification_status": "KEY_REVOKED_POST_SIGN",
+                        "key_id": key_id,
+                    }
+            if pubkey_hex and key_record.public_key_hex.lower() != pubkey_hex.lower():
+                return False, f"Authenticity Failure: Public key mismatch for registered key_id '{key_id}'!", {
+                    "verification_status": "KEY_MISMATCH",
+                    "key_id": key_id,
+                }
 
         # -------------------------------------------------------------
-        # 4. Authenticity Verification (Ed25519 Digital Signature)
+        # 4. Authenticity Verification (Full Package Ed25519 Digital Signature)
         # -------------------------------------------------------------
-        response_text = pkg_data.get("response_text", "")
-        combined_payload = {
-            "manifest_hash": recomputed_manifest_hash,
-            "event_chain_hash": recomputed_event_hash,
-            "response_hash": hashlib.sha256(response_text.encode("utf-8")).hexdigest(),
-            "violation": pkg_data.get("violation_details", {}),
-        }
-        recomputed_canonical_hash = cls.canonical_hash(combined_payload)
+        # Reconstruct canonical claims from the entire package dictionary excluding 'proof'
+        claims_to_verify = {k: v for k, v in pkg_data.items() if k != "proof"}
+        if "substrate_truth_level" not in claims_to_verify:
+            claims_to_verify["substrate_truth_level"] = substrate_truth
+        recomputed_canonical_hash = cls.canonical_hash(claims_to_verify)
 
         # If Ed25519 signature and public key are present, perform asymmetric verification
         if sig_ed25519_hex and pubkey_hex:
             try:
                 public_key = ed25519.Ed25519PublicKey.from_public_bytes(bytes.fromhex(pubkey_hex))
                 sig_bytes = bytes.fromhex(sig_ed25519_hex)
-                # Verify that the canonical payload hash was signed by the holder of this private key
-                public_key.verify(sig_bytes, recomputed_canonical_hash.encode("utf-8"))
+                try:
+                    # Verify that the entire canonical package claims hash was signed
+                    public_key.verify(sig_bytes, recomputed_canonical_hash.encode("utf-8"))
+                except InvalidSignature:
+                    # Fallback check for legacy 4-field payload for backwards compatibility
+                    response_text = pkg_data.get("response_text", "")
+                    legacy_payload = {
+                        "manifest_hash": recomputed_manifest_hash,
+                        "event_chain_hash": recomputed_event_hash,
+                        "response_hash": hashlib.sha256(response_text.encode("utf-8")).hexdigest(),
+                        "violation": pkg_data.get("violation_details", {}),
+                    }
+                    legacy_hash = cls.canonical_hash(legacy_payload)
+                    public_key.verify(sig_bytes, legacy_hash.encode("utf-8"))
             except (InvalidSignature, ValueError) as exc:
                 return False, f"Authenticity Failure: Invalid Ed25519 digital signature! Tampered payload detected or signature mismatch ({exc}).", {}
         elif legacy_sig and recomputed_canonical_hash != legacy_sig:
@@ -165,7 +202,7 @@ class StandaloneVerifier:
             "substrate_truth_level": substrate_truth,
             "signer_public_key": pubkey_hex or "NONE",
             "key_id": key_id,
-            "key_status": key_record.status if key_record else "UNVALIDATED_REGISTRY",
+            "key_status": key_record.status if key_record else ("UNVALIDATED_REGISTRY" if effective_mode == "CRYPTOGRAPHIC_ONLY" else "UNKNOWN"),
             "merkle_root": claimed_merkle_root or "N/A",
         }
         return True, "Evidence package integrity and Ed25519 signature verified successfully. No tampering detected.", summary

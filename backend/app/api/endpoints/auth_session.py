@@ -4,7 +4,7 @@ import secrets
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
 
-from app.core.admin_session import COOKIE_NAME, issue_admin_session
+from app.core.admin_session import COOKIE_NAME, issue_admin_session, is_valid_admin_session
 from app.core.config import settings
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -34,6 +34,14 @@ async def establish_session(request: Request, response: Response) -> Response:
         path="/api",
     )
     return response
+
+
+@router.get("/session")
+async def check_session(request: Request) -> dict:
+    """Check whether the client holds a valid HttpOnly administrative session cookie."""
+    cookie = request.cookies.get(COOKIE_NAME)
+    valid = is_valid_admin_session(cookie)
+    return {"authenticated": valid}
 
 
 @router.delete("/session", status_code=status.HTTP_204_NO_CONTENT)

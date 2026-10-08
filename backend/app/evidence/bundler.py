@@ -76,6 +76,7 @@ class EvidencePackage(BaseModel):
     strategies_used: List[str]
 
     target_mode: str
+    substrate_truth_level: str = "TARGET_INSTRUMENTED"
     response_text: str
     execution_events: List[Dict[str, Any]]
     
@@ -130,13 +131,40 @@ class EvidenceBundler:
         }
         manifest_hash = canonical_hash(manifest_data)
 
-        combined_payload = {
-            "manifest_hash": manifest_hash,
-            "event_chain_hash": event_chain_hash,
-            "response_hash": hashlib.sha256(response_text.encode("utf-8")).hexdigest(),
-            "violation": violation_details,
+        default_patch = (
+            "# Code Remediation Patch (Server-Side Session Validation)\n"
+            "def handle_tool_call(tool_name, arguments, session_context):\n"
+            "    # Reject caller arguments that attempt to cross tenant boundaries\n"
+            "    if 'customer_id' in arguments:\n"
+            "        arguments['customer_id'] = session_context.authenticated_customer_id\n"
+            "    return execute_under_sandbox(tool_name, arguments)\n"
+        )
+        resolved_patch = code_patch or default_patch
+
+        # Comprehensive canonical package payload covering ALL claims and telemetry
+        canonical_package_claims = {
+            "package_id": pkg_id,
+            "scan_id": scan_id,
+            "target_id": target_id,
+            "target_name": target_name,
+            "finding_id": finding_id,
+            "rule_id": rule_id,
+            "rule_name": rule_name,
+            "severity": severity,
+            "owasp_category": owasp_category,
+            "taxonomy_version": "2025",
+            "attack_vector": rule_id,
+            "attack_prompts": attack_prompts,
+            "strategies_used": strategies_used,
+            "target_mode": target_mode,
+            "substrate_truth_level": substrate_truth_level,
+            "response_text": response_text,
+            "execution_events": execution_events,
+            "violation_details": violation_details,
+            "remediation_recommendation": remediation_text,
+            "remediation_code_patch": resolved_patch,
         }
-        canonical_payload_hash = canonical_hash(combined_payload)
+        canonical_payload_hash = canonical_hash(canonical_package_claims)
 
         # 2. Key Registry & Authenticity: Sign the canonical payload hash with real Ed25519 private key
         registry = get_active_key_registry()
@@ -165,7 +193,7 @@ class EvidenceBundler:
                 )
             )
 
-        # Ed25519 signs the canonical payload bytes
+        # Ed25519 signs the canonical payload bytes covering the full package
         sig_bytes = key.sign(canonical_payload_hash.encode("utf-8"))
         signature_ed25519_hex = sig_bytes.hex()
 
@@ -183,15 +211,6 @@ class EvidenceBundler:
             substrate_truth_level=substrate_truth_level,
         )
 
-        default_patch = (
-            "# Code Remediation Patch (Server-Side Session Validation)\n"
-            "def handle_tool_call(tool_name, arguments, session_context):\n"
-            "    # Reject caller arguments that attempt to cross tenant boundaries\n"
-            "    if 'customer_id' in arguments:\n"
-            "        arguments['customer_id'] = session_context.authenticated_customer_id\n"
-            "    return execute_under_sandbox(tool_name, arguments)\n"
-        )
-
         return EvidencePackage(
             package_id=pkg_id,
             scan_id=scan_id,
@@ -206,10 +225,11 @@ class EvidenceBundler:
             attack_prompts=attack_prompts,
             strategies_used=strategies_used,
             target_mode=target_mode,
+            substrate_truth_level=substrate_truth_level,
             response_text=response_text,
             execution_events=execution_events,
             violation_details=violation_details,
             remediation_recommendation=remediation_text,
-            remediation_code_patch=code_patch or default_patch,
+            remediation_code_patch=resolved_patch,
             proof=proof,
         )

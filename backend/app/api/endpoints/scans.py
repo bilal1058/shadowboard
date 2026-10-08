@@ -175,8 +175,8 @@ async def run_scan_task(
             rules = policy_contract.policies
             applicable_rules = [r for r in rules if policy_is_applicable(r, capabilities)[0]]
             num_applicable = len(applicable_rules)
-            # Ensure minimum 100 total evaluated turns across all applicable policies
-            turns_per_rule = max(35, 100 // max(1, num_applicable))
+            # Authoritative scan budget: bounded to 3-10 turns per objective for responsive adaptive FSM exploration
+            turns_per_rule = min(10, max(3, 30 // max(1, num_applicable)))
             cumulative_turn_counter = 0
 
             applicable_count = 0
@@ -467,9 +467,30 @@ async def trigger_scan(
                 headers={"Retry-After": "5"},
             )
 
+        # Authoritative target security configuration snapshot
+        mitigation_on = False
+        if req.mitigation_enabled is not None:
+            mitigation_on = bool(req.mitigation_enabled)
+            await db.execute(
+                "INSERT INTO target_security_config (target_id, mitigation_enabled) VALUES (?, ?) "
+                "ON CONFLICT(target_id) DO UPDATE SET mitigation_enabled = excluded.mitigation_enabled",
+                (req.target_id, mitigation_on),
+            )
+        else:
+            cfg_cur = await db.execute(
+                "SELECT mitigation_enabled FROM target_security_config WHERE target_id = ?",
+                (req.target_id,),
+            )
+            cfg_row = await cfg_cur.fetchone()
+            if cfg_row is not None:
+                mitigation_on = bool(cfg_row[0])
+            else:
+                # Target 2 is hardened Meridian Assistant by default; Target 1 is vulnerable fixture
+                mitigation_on = True if req.target_id == 2 else False
+
         cursor = await db.execute(
-            "INSERT INTO scan_runs (target_id, scan_mode, mitigation_enabled, status) VALUES (?, ?, FALSE, ?)",
-            (req.target_id, req.scan_mode, "QUEUED"),
+            "INSERT INTO scan_runs (target_id, scan_mode, mitigation_enabled, status) VALUES (?, ?, ?, ?)",
+            (req.target_id, req.scan_mode, mitigation_on, "QUEUED"),
         )
         await db.commit()
         scan_id = cursor.lastrowid

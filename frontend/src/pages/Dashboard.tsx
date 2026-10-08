@@ -36,12 +36,13 @@ export const DashboardPage: React.FC = () => {
 
   const { trigger, isScanning } = useTriggerScan(selectedTargetId);
 
-  // Check saved admin session on mount
+  // Check saved admin session on mount via HttpOnly cookie
   useEffect(() => {
-    const savedKey = api.getApiKey();
-    if (savedKey) {
-      setAdminSessionActive(true);
-    }
+    api.checkSession().then((active) => {
+      if (active) {
+        setAdminSessionActive(true);
+      }
+    });
   }, []);
 
   // Sync selected target when visible targets list updates
@@ -65,15 +66,10 @@ export const DashboardPage: React.FC = () => {
     const cleanKey = key.trim();
     if (!cleanKey) return;
     try {
-      api.setApiKey(cleanKey);
+      await api.establishBrowserSession(cleanKey);
       setAdminSessionActive(true);
       setApiKeyModalOpen(false);
       setApiKey('');
-      try {
-        await api.establishBrowserSession(cleanKey);
-      } catch (sessionErr) {
-        console.warn('Session cookie fallback to Bearer header:', sessionErr);
-      }
       toast.success('Administrative session established');
       await refreshTargets();
       await refreshScans();

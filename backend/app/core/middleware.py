@@ -120,8 +120,8 @@ class ProductionHeadersMiddleware(BaseHTTPMiddleware):
             "default-src 'self'; connect-src 'self' http://localhost:* http://127.0.0.1:* ws: wss:; img-src 'self' data:; "
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
             "font-src 'self' https://fonts.gstatic.com; "
-            "script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdn.jsdelivr.net; "
-            "base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
+            "script-src 'self'; "
+            "object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
         )
         response.headers["Server"] = "ShadowBoard"
         response.headers["Cache-Control"] = "no-store"

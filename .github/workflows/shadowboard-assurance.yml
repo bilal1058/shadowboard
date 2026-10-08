@@ -72,6 +72,7 @@ jobs:
           python shadowboard_cli.py \
             --target-id 2 \
             --ci \
+            --mitigation \
             --max-critical 0 \
             --min-score 75 \
             --probes-per-class 100 \
@@ -79,12 +80,11 @@ jobs:
             --junit-out junit-report.xml
 
       - name: Upload SARIF to GitHub Code Scanning
-        if: always()
+        if: ${{ always() && hashFiles('backend/shadowboard-results.sarif') != '' }}
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: backend/shadowboard-results.sarif
           category: shadowboard-ai-assurance
-          fail_on_error: false
 
       - name: Build Docker Image & Verify Healthcheck
         run: |

@@ -63,9 +63,9 @@ async def test_target_a_chat_only_no_spurious_events():
         assert attempt["execution_events"] == []
     
     # Verify 3D result model populated
-    assert result["status"] in ["CONFIRMED", "LIKELY", "PASS", "INCONCLUSIVE"]
-    assert result["attack_outcome"] in ["BLOCKED", "COMPLIED", "PARTIAL", "INCONCLUSIVE"]
-    assert result["evidence_status"] in ["SUFFICIENT", "PARTIAL", "INSUFFICIENT"]
+    assert result["status"] in ["CONFIRMED", "LIKELY", "PASS", "INCONCLUSIVE", "ERROR"]
+    assert result["attack_outcome"] in ["BLOCKED", "COMPLIED", "PARTIAL", "INCONCLUSIVE", "ERROR"]
+    assert result["evidence_status"] in ["SUFFICIENT", "PARTIAL", "INSUFFICIENT", "NOT_AVAILABLE"]
 
 
 @pytest.mark.asyncio

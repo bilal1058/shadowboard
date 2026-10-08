@@ -12,6 +12,7 @@ from typing import Dict, Any, List, Optional, Tuple
 import os
 import json
 import time
+import uuid
 from pathlib import Path
 from pydantic import BaseModel, Field
 from cryptography.hazmat.primitives.asymmetric import ed25519
@@ -32,6 +33,10 @@ class KeyRecord(BaseModel):
     description: str = "ShadowBoard evidence signing key"
 
 
+_BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
+_DEFAULT_KEYS_DIR = _BACKEND_DIR / ".keys"
+
+
 class KeyRegistry:
     """Manages trusted public signing keys and the active signing private key."""
 
@@ -39,10 +44,40 @@ class KeyRegistry:
         self._keys: Dict[str, KeyRecord] = {}
         self._private_keys: Dict[str, ed25519.Ed25519PrivateKey] = {}
         self._active_key_id: Optional[str] = None
-        self._key_store_path = key_store_path
+        self._key_store_path = Path(key_store_path) if key_store_path else (_DEFAULT_KEYS_DIR / "keyring_metadata.json")
+
+        # Load existing registry metadata if available
+        if not self._is_test_env():
+            self._load_stored_metadata()
 
         # Initialize from environment / configuration
         self._initialize_from_config()
+
+    def _is_test_env(self) -> bool:
+        return os.getenv("APP_ENV") == "test" or "pytest" in sys.modules or "PYTEST_CURRENT_TEST" in os.environ
+
+    def _load_stored_metadata(self) -> None:
+        """Loads historical public key metadata from persistent keyring file."""
+        if self._key_store_path and self._key_store_path.exists():
+            try:
+                with open(self._key_store_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    for k_dict in data.get("keys", []):
+                        rec = KeyRecord(**k_dict)
+                        self._keys[rec.key_id] = rec
+            except Exception:
+                pass
+
+    def _save_stored_metadata(self) -> None:
+        """Persists current public key records to durable storage."""
+        if self._is_test_env() or not self._key_store_path:
+            return
+        try:
+            self._key_store_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(self._key_store_path, "w", encoding="utf-8") as f:
+                json.dump(self.export_keyring(), f, indent=2)
+        except Exception:
+            pass
 
     def _initialize_from_config(self) -> None:
         """Initializes the active signing key from config or persistent storage."""
@@ -63,7 +98,7 @@ class KeyRegistry:
                     self._register_private_key(key_id, private_key, description=f"Loaded from {signing_key_path}")
                     return
                 except Exception as exc:
-                    pass
+                    raise RuntimeError(f"Startup Failure: Configured SIGNING_KEY_PATH '{signing_key_path}' could not be loaded: {exc}")
 
             # If path specified but file doesn't exist, create it securely
             try:
@@ -78,11 +113,11 @@ class KeyRegistry:
                     f.write(pem_data)
                 self._register_private_key(key_id, new_key, description=f"Generated at {signing_key_path}")
                 return
-            except Exception:
-                pass
+            except Exception as exc:
+                raise RuntimeError(f"Startup Failure: Could not initialize key at configured SIGNING_KEY_PATH '{signing_key_path}': {exc}")
 
         # Fallback to persistent local key directory if writable
-        default_dir = Path("backend/.keys")
+        default_dir = _DEFAULT_KEYS_DIR
         default_pem = default_dir / "shadowboard_signing_key.pem"
         if default_pem.exists():
             try:
@@ -107,7 +142,7 @@ class KeyRegistry:
             self._register_private_key(key_id, fallback_key, description="Instance default persistent key")
             return
         except Exception:
-            # Memory-only fallback if filesystem is read-only
+            # Ephemeral in-memory key only if environment filesystem is non-writable
             ephemeral_key = ed25519.Ed25519PrivateKey.generate()
             self._register_private_key(key_id, ephemeral_key, description="Ephemeral memory key")
 
@@ -122,21 +157,27 @@ class KeyRegistry:
             encoding=serialization.Encoding.Raw,
             format=serialization.PublicFormat.Raw,
         )
-        record = KeyRecord(
-            key_id=key_id,
-            public_key_hex=pub_bytes.hex(),
-            status="ACTIVE",
-            created_at=time.time(),
-            description=description,
-        )
+        existing = self._keys.get(key_id)
+        if existing and existing.status == "REVOKED":
+            record = existing
+        else:
+            record = KeyRecord(
+                key_id=key_id,
+                public_key_hex=pub_bytes.hex(),
+                status="ACTIVE",
+                created_at=time.time(),
+                description=description,
+            )
         self._keys[key_id] = record
         self._private_keys[key_id] = private_key
         self._active_key_id = key_id
+        self._save_stored_metadata()
         return record
 
     def register_public_key(self, record: KeyRecord) -> None:
         """Registers a public key record for verification without private key."""
         self._keys[record.key_id] = record
+        self._save_stored_metadata()
 
     def get_active_signing_key(self) -> Tuple[ed25519.Ed25519PrivateKey, str]:
         """Returns the active private key and its key_id for signing."""
@@ -169,19 +210,21 @@ class KeyRegistry:
         record.revoked_at = time.time()
         record.revocation_reason = reason
 
-        # If active key was revoked, generate a fresh active key
+        # If active key was revoked, generate a fresh active key with collision-free UUID
         if self._active_key_id == key_id:
-            new_key_id = f"sb_key_{int(time.time())}"
+            new_key_id = f"sb_key_{uuid.uuid4().hex[:12]}"
             new_key = ed25519.Ed25519PrivateKey.generate()
             self._register_private_key(new_key_id, new_key, description=f"Automatic rollover after revoking {key_id}")
 
+        self._save_stored_metadata()
         return record
 
     def rotate_key(self, new_key_id: Optional[str] = None) -> Tuple[ed25519.Ed25519PrivateKey, KeyRecord]:
         """Rotates to a newly generated private signing key, keeping old key registered."""
-        kid = new_key_id or f"sb_key_{int(time.time())}"
+        kid = new_key_id or f"sb_key_{uuid.uuid4().hex[:12]}"
         new_key = ed25519.Ed25519PrivateKey.generate()
         record = self._register_private_key(kid, new_key, description=f"Rotated key at {time.strftime('%Y-%m-%d %H:%M:%SZ')}")
+        self._save_stored_metadata()
         return new_key, record
 
     def list_keys(self) -> List[KeyRecord]:
@@ -206,6 +249,7 @@ class KeyRegistry:
                 count += 1
             except Exception:
                 pass
+        self._save_stored_metadata()
         return count
 
 
@@ -224,5 +268,10 @@ def get_active_key_registry() -> KeyRegistry:
 def reset_key_registry() -> KeyRegistry:
     """Resets the singleton KeyRegistry instance (used in tests)."""
     global _GLOBAL_KEY_REGISTRY
-    _GLOBAL_KEY_REGISTRY = KeyRegistry()
+    reg = KeyRegistry()
+    reg._keys.clear()
+    reg._private_keys.clear()
+    reg._active_key_id = None
+    reg._initialize_from_config()
+    _GLOBAL_KEY_REGISTRY = reg
     return _GLOBAL_KEY_REGISTRY

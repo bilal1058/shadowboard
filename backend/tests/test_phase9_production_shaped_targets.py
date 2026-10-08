@@ -314,6 +314,8 @@ def test_9_8_third_party_target_independence():
         "TargetOutcome",
         "EvaluationEngine",
         "ToolGatedAgent",
+        "from app.",
+        "import app.",
     ]
 
     violations = []
