@@ -83,8 +83,8 @@ def generate_scan_pdf_report(scan_data: Dict[str, Any], findings: List[Dict[str,
     story.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#e11d48'), spaceBefore=8, spaceAfter=12))
 
     # 2. Executive Summary & Risk Scorecard
-    score = scan_data.get("overall_score", 0)
-    grade = scan_data.get("risk_grade", "F")
+    score = scan_data.get("overall_score") if scan_data.get("overall_score") is not None else 0
+    grade = scan_data.get("risk_grade") or "F"
     target_name = scan_data.get("target_name", "Target Application")
     mitigation_on = scan_data.get("mitigation_enabled", False)
     findings_list = findings or scan_data.get("findings", [])

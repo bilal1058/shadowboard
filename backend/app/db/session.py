@@ -75,21 +75,7 @@ async def _seed_default_targets(db):
     from app.api.endpoints.policies import default_policy_for_target_type
     reference_targets = [
         {
-            "name": "Meridian Support Assistant",
-            "base_url": os.getenv("TARGET_APP_URL", "http://127.0.0.1:8000/target-app"),
-            "target_type": "EXTERNAL_SUPPORT",
-            "capabilities": {
-                "chat": True,
-                "rag": False,
-                "tools": True,
-                "data_access": True,
-                "has_rag": False,
-                "has_tools": True,
-                "has_memory": False,
-                "tool_names": ["get_invoice"],
-            },
-        },
-        {
+            "id": 2,
             "name": "Meridian Enterprise Assistant",
             "base_url": "http://127.0.0.1:8000/internal-rag",
             "target_type": "INTERNAL_RAG",
@@ -106,14 +92,14 @@ async def _seed_default_targets(db):
         },
     ]
     for target in reference_targets:
-        cursor = await db.execute("SELECT id FROM targets WHERE base_url = ?", (target["base_url"],))
+        cursor = await db.execute("SELECT id FROM targets WHERE base_url = ? OR id = ?", (target["base_url"], target["id"]))
         row = await cursor.fetchone()
         if not row:
             cursor = await db.execute(
-                "INSERT INTO targets (name, base_url, model_name, target_type, target_mode, capabilities_json) VALUES (?, ?, ?, ?, ?, ?)",
-                (target["name"], target["base_url"], "qwen-flash", target["target_type"], "INSTRUMENTED", json.dumps(target["capabilities"])),
+                "INSERT INTO targets (id, name, base_url, model_name, target_type, target_mode, capabilities_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (target["id"], target["name"], target["base_url"], "qwen-flash", target["target_type"], "INSTRUMENTED", json.dumps(target["capabilities"])),
             )
-            target_id = cursor.lastrowid
+            target_id = target["id"]
             await db.execute(
                 "INSERT INTO policies (target_id, policy_json, taxonomy, taxonomy_version) VALUES (?, ?, ?, ?)",
                 (target_id, json.dumps(default_policy_for_target_type(target["target_type"])), "OWASP", "2025"),

@@ -18,8 +18,10 @@ export const DashboardPage: React.FC = () => {
   const [adminSessionActive, setAdminSessionActive] = useState<boolean>(false);
   const [apiKeyModalOpen, setApiKeyModalOpen] = useState<boolean>(false);
 
-  // Registered reference targets available to the console.
-  const visibleTargets = targets;
+  // Registered reference targets: strictly keep only document-aware chatbot agents (with knowledge base / RAG)
+  const visibleTargets = targets.filter(
+    (tgt) => Boolean(tgt.capabilities?.rag || tgt.target_type === 'INTERNAL_RAG' || tgt.base_url?.includes('internal-rag'))
+  );
 
   const { trigger, isScanning } = useTriggerScan(selectedTargetId);
 

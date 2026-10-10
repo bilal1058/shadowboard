@@ -66,6 +66,7 @@ async def lifespan(app: FastAPI):
             from app.api.endpoints.policies import default_policy_for_target_type
             reference_targets = [
                 {
+                    "id": 2,
                     "name": "Meridian Enterprise Assistant",
                     "base_url": "http://127.0.0.1:8000/internal-rag",
                     "target_type": "INTERNAL_RAG",
@@ -73,7 +74,7 @@ async def lifespan(app: FastAPI):
                 },
             ]
             for target in reference_targets:
-                cursor = await db.execute("SELECT id FROM targets WHERE base_url = ?", (target["base_url"],))
+                cursor = await db.execute("SELECT id FROM targets WHERE base_url = ? OR id = ?", (target["base_url"], target["id"]))
                 row = await cursor.fetchone()
                 if row:
                     target_id = row[0]
@@ -95,10 +96,10 @@ async def lifespan(app: FastAPI):
                         )
                 else:
                     cursor = await db.execute(
-                        "INSERT INTO targets (name, base_url, model_name, target_type, target_mode, capabilities_json) VALUES (?, ?, ?, ?, ?, ?)",
-                        (target["name"], target["base_url"], "qwen-flash", target["target_type"], "INSTRUMENTED", json.dumps(target["capabilities"])),
+                        "INSERT INTO targets (id, name, base_url, model_name, target_type, target_mode, capabilities_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        (target["id"], target["name"], target["base_url"], "qwen-flash", target["target_type"], "INSTRUMENTED", json.dumps(target["capabilities"])),
                     )
-                    target_id = cursor.lastrowid
+                    target_id = target["id"]
                     await db.execute(
                         "INSERT INTO policies (target_id, policy_json, taxonomy, taxonomy_version) VALUES (?, ?, ?, ?)",
                         (target_id, json.dumps(default_policy_for_target_type(target["target_type"])), "OWASP", "2025"),
