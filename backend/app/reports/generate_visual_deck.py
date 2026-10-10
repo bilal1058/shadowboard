@@ -1,6 +1,6 @@
 """
 Visual Pitch Deck Generator with Embedded UI Screenshots
-Creates a 12-slide 16:9 widescreen presentation (ShadowBoard_Presentation.pptx)
+Creates a 14-slide 16:9 widescreen presentation (ShadowBoard_Presentation.pptx)
 featuring real screenshots of every aspect of ShadowBoard with simple, non-bloated explanations.
 """
 
@@ -159,6 +159,96 @@ def generate_visual_deck(output_path: str, artifact_dir: str):
         p_box.font.bold = True
         p_box.font.color.rgb = ACCENT_EMERALD
 
+
+    def add_quad_card_slide(
+        slide_num: str,
+        title: str,
+        subtitle: str,
+        lead_title: str,
+        lead_desc: str,
+        cards: list,
+        takeaway: str,
+        accent_color=ACCENT_CYAN
+    ):
+        s = prs.slides.add_slide(blank_layout)
+        add_bg(s)
+        add_header(s, slide_num, title, subtitle)
+
+        # Header lead banner
+        banner = s.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(0.8), Inches(1.65), Inches(11.733), Inches(1.15))
+        banner.fill.solid()
+        banner.fill.fore_color.rgb = CARD_BG
+        banner.line.color.rgb = CARD_BORDER
+        banner.line.width = Pt(1)
+
+        tb_banner = s.shapes.add_textbox(Inches(1.0), Inches(1.72), Inches(11.333), Inches(1.0))
+        tf_b = tb_banner.text_frame
+        tf_b.word_wrap = True
+        pb1 = tf_b.paragraphs[0]
+        pb1.text = lead_title
+        pb1.font.size = Pt(15)
+        pb1.font.bold = True
+        pb1.font.color.rgb = TEXT_WHITE
+
+        pb2 = tf_b.add_paragraph()
+        pb2.text = lead_desc
+        pb2.font.size = Pt(11.5)
+        pb2.font.color.rgb = TEXT_MUTED
+        pb2.space_before = Pt(4)
+
+        # 4 Column Cards
+        card_w = 2.78
+        gap = 0.20
+        top_y = 2.95
+        card_h = 3.65
+
+        for i, (badge, c_title, c_desc, status_tag) in enumerate(cards):
+            cx = 0.8 + i * (card_w + gap)
+            card = s.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(cx), Inches(top_y), Inches(card_w), Inches(card_h))
+            card.fill.solid()
+            card.fill.fore_color.rgb = CARD_BG
+            card.line.color.rgb = accent_color if i == 0 else CARD_BORDER
+            card.line.width = Pt(1.5 if i == 0 else 1)
+
+            tb_c = s.shapes.add_textbox(Inches(cx + 0.15), Inches(top_y + 0.15), Inches(card_w - 0.3), Inches(card_h - 0.3))
+            tf_c = tb_c.text_frame
+            tf_c.word_wrap = True
+
+            p_badge = tf_c.paragraphs[0]
+            p_badge.text = badge.upper()
+            p_badge.font.size = Pt(9.5)
+            p_badge.font.bold = True
+            p_badge.font.color.rgb = accent_color
+            p_badge.space_after = Pt(4)
+
+            p_title = tf_c.add_paragraph()
+            p_title.text = c_title
+            p_title.font.size = Pt(13)
+            p_title.font.bold = True
+            p_title.font.color.rgb = TEXT_WHITE
+            p_title.space_after = Pt(8)
+
+            p_desc = tf_c.add_paragraph()
+            p_desc.text = c_desc
+            p_desc.font.size = Pt(10.5)
+            p_desc.font.color.rgb = TEXT_MUTED
+            p_desc.space_after = Pt(12)
+
+            p_tag = tf_c.add_paragraph()
+            p_tag.text = status_tag
+            p_tag.font.size = Pt(9.5)
+            p_tag.font.bold = True
+            p_tag.font.color.rgb = ACCENT_EMERALD
+
+        # Takeaway bar
+        tb_foot = s.shapes.add_textbox(Inches(0.8), Inches(6.75), Inches(11.733), Inches(0.4))
+        tf_f = tb_foot.text_frame
+        p_f = tf_f.paragraphs[0]
+        p_f.text = f"💡 TAKEAWAY: {takeaway}"
+        p_f.font.size = Pt(11)
+        p_f.font.bold = True
+        p_f.font.color.rgb = ACCENT_EMERALD
+
     # =========================================================================
     # SLIDE 1: Title Slide (Hero Pitch)
     # =========================================================================
@@ -222,11 +312,50 @@ def generate_visual_deck(output_path: str, artifact_dir: str):
         pd.font.size = Pt(11)
         pd.font.color.rgb = TEXT_MUTED
 
+
+    # =========================================================================
+    # SLIDE 2: PROJECT GOALS & OBJECTIVES
+    # =========================================================================
+    add_quad_card_slide(
+        slide_num="Slide 02 • Strategic Mission",
+        title="Project Goals & Security Objectives",
+        subtitle="Definitive cyber-assurance mandates for autonomous, tool-using enterprise AI systems.",
+        lead_title="DETERMINISTIC SECURITY GUARANTEES FOR ENTERPRISE AI",
+        lead_desc="ShadowBoard addresses the vulnerability gap in tool-using agents by eliminating subjective keyword guessing and replacing it with mathematical AST contracts and empirical proof.",
+        cards=[
+            ("OBJ 01", "Deterministic Policies", "Replace erratic LLM judge opinions with rigid Pydantic AST schemas. Validate session bounds, tool args, and tenant data deterministically.", "✓ ZERO-TOLERANCE POLICY"),
+            ("OBJ 02", "OWASP & ATLAS Threat Matrix", "Full spectrum coverage across OWASP Top 10 for LLMs (LLM01 Prompt Injection, LLM02 Leak, LLM06 BOLA, LLM09 Hallucination) & MITRE ATLAS.", "✓ FULL-SPECTRUM ADVERSARIAL AUDIT"),
+            ("OBJ 03", "Empirical Closed-Loop Proof", "Deliver mathematical A/B proof: baseline an unmitigated agent (Grade F), deploy active guardrails, and re-test to prove 0 residual breaches (Grade A).", "✓ PROVABLE RISK REMEDIATION"),
+            ("OBJ 04", "Cryptographic Non-Repudiation", "Bind all attack prompts, LLM tokens, and tool invocations to SHA-256 evidence hashes, compiled into tamper-proof boardroom PDF reports.", "✓ BOARDROOM-READY ATTESTATION")
+        ],
+        takeaway="Moving AI evaluation from prompt-hacking games to deterministic, verifiable enterprise assurance.",
+        accent_color=ACCENT_CYAN
+    )
+
+    # =========================================================================
+    # SLIDE 3: DEVELOPMENT APPROACH & METHODOLOGY
+    # =========================================================================
+    add_quad_card_slide(
+        slide_num="Slide 03 • System Methodology",
+        title="Development Approach & Engineering Methodology",
+        subtitle="Rigorous DevSecOps paradigm engineered for continuous regression verification.",
+        lead_title="CONTINUOUS DEVSECOPS & ARCHITECTURAL ISOLATION",
+        lead_desc="ShadowBoard was engineered following a defense-in-depth lifecycle emphasizing strict dual-plane decoupling, automated regression invariants, and turnkey air-gapped deployment.",
+        cards=[
+            ("PHASE 01", "Dual-Plane Decoupling", "Complete isolation between Assurance Control Plane (FastAPI, SQLite WAL / PostgreSQL, SSE) and evaluated Agent Substrates (Vector RAG & Tools).", "✓ ZERO FIXTURE POLLUTION"),
+            ("PHASE 02", "Adaptive FSM Red-Teaming", "Finite State Machine (FSM) multi-turn dispatcher that dynamically pivots attack strategies upon refusal: Direct Override → Roleplay → Context Framing → Trojan RAG.", "✓ MULTI-TURN PERSISTENT PROBES"),
+            ("PHASE 03", "Automated CI Regression Gates", "Test-Driven Development with 207 automated tests across 9 phases, enforced by 23 permanent CI audit invariants verifying mock bans and secret hygiene.", "✓ 100% REGRESSION-FREE GATE"),
+            ("PHASE 04", "Turnkey Zero-Dependency Core", "Self-contained Python standard library + FastAPI architecture running with 'python backend/main.py', serving pre-built responsive Vue/Vite client.", "✓ ENTERPRISE AIR-GAP READY")
+        ],
+        takeaway="Engineered with industry-grade software engineering standards, strict contract isolation, and 100% test coverage.",
+        accent_color=ACCENT_PURPLE
+    )
+
     # =========================================================================
     # SLIDE 2: Executive Dashboard & Live Scan Execution
     # =========================================================================
     add_screenshot_slide(
-        slide_num="Slide 01 • Core Platform",
+        slide_num="Slide 04 • Core Platform",
         title="Executive Security Dashboard & Live Attack Execution",
         subtitle="Clean cyber-defense interface streaming live scans, policy coverage, and risk grading.",
         image_name="main_dashboard_1788799639913.png",
@@ -244,7 +373,7 @@ def generate_visual_deck(output_path: str, artifact_dir: str):
     # SLIDE 3: Dialogue Inspector (Verbatim Prompts & Model Replies)
     # =========================================================================
     add_screenshot_slide(
-        slide_num="Slide 02 • Deep Trace Audit",
+        slide_num="Slide 05 • Deep Trace Audit",
         title="Dialogue Inspector: Verbatim Attack Prompts & Responses",
         subtitle="Full transparency into what the attacker sent and exactly how the target reacted.",
         image_name="dialogue_inspect_1788721791298.png",
@@ -262,7 +391,7 @@ def generate_visual_deck(output_path: str, artifact_dir: str):
     # SLIDE 4: Security Policy Contracts (Policy-as-Code)
     # =========================================================================
     add_screenshot_slide(
-        slide_num="Slide 03 • Formal Specification",
+        slide_num="Slide 06 • Formal Specification",
         title="Security Policies: Formal Guardrail Contracts",
         subtitle="Moving from fuzzy English prompts to declarative Pydantic schemas (JSON).",
         image_name="security_policies_page_1788720119845.png",
@@ -334,7 +463,7 @@ def generate_visual_deck(output_path: str, artifact_dir: str):
     # SLIDE 8: Groundedness & Hallucination Defense
     # =========================================================================
     add_screenshot_slide(
-        slide_num="Slide 07 • Factual Integrity",
+        slide_num="Slide 10 • Factual Integrity",
         title="Groundedness & Hallucination Defense (OWASP LLM09)",
         subtitle="Verifying that models admit lack of knowledge rather than fabricating false policies.",
         image_name="groundedness_probe_results_1788801133480.png",
@@ -370,7 +499,7 @@ def generate_visual_deck(output_path: str, artifact_dir: str):
     # SLIDE 10: Cryptographic SHA-256 Evidence Hash Verification
     # =========================================================================
     add_screenshot_slide(
-        slide_num="Slide 09 • Non-Repudiation",
+        slide_num="Slide 12 • Non-Repudiation",
         title="Tamper-Proof Audit: Cryptographic SHA-256 Hashing",
         subtitle="Every finding is cryptographically bound to its raw execution trace.",
         image_name="verify_hash_modal_1788716696945.png",
@@ -407,14 +536,14 @@ def generate_visual_deck(output_path: str, artifact_dir: str):
     # =========================================================================
     s12 = prs.slides.add_slide(blank_layout)
     add_bg(s12)
-    add_header(s12, "Summary & Impact", "Why ShadowBoard Sets the Standard for AI Security",
+    add_header(s12, "Slide 14 • Summary & Impact", "Why ShadowBoard Sets the Standard for AI Security",
                "Transforming AI evaluation from toy prompt games into high-assurance enterprise DevSecOps.")
 
     cards_data = [
         ("Evidence Over Opinion", "Audits raw execution traces, tool call parameters, and vector chunk scores—not subjective chatbot impressions.", ACCENT_CYAN),
         ("Real Enterprise RAG", "Indexes real multi-tier PDFs (Executive comp, Trojan vendor invoices) with genuine vector similarity search.", ACCENT_AMBER),
         ("Closed-Loop Regression", "The only platform that provides empirical before-and-after proof that a defense closed the vulnerability.", ACCENT_EMERALD),
-        ("Turnkey Execution", "Zero-dependency frontend, 19 automated tests passing, single command 'python backend/main.py'.", ACCENT_PURPLE)
+        ("Turnkey Execution", "Zero-dependency frontend, 207 automated tests passing, single command 'python backend/main.py'.", ACCENT_PURPLE)
     ]
     for i, (c_title, c_desc, c_color) in enumerate(cards_data):
         row = i // 2
