@@ -5,7 +5,7 @@ from typing import Dict, Any, List
 import aiosqlite
 
 from app.db.session import get_db
-from app.api.endpoints.scans import get_scan_details, export_scan_pdf, list_scans
+from app.api.endpoints.scans import get_scan_details, export_scan_pdf, export_scan_html, list_scans
 from app.api.endpoints.integrations import export_scan_sarif
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
@@ -33,6 +33,12 @@ async def get_scan_report(scan_id: int, db: aiosqlite.Connection = Depends(get_d
 async def get_report_pdf(scan_id: int, db: aiosqlite.Connection = Depends(get_db)):
     """Download boardroom-ready PDF security audit report."""
     return await export_scan_pdf(scan_id, db)
+
+
+@router.get("/{scan_id}/html")
+async def get_report_html(scan_id: int, db: aiosqlite.Connection = Depends(get_db)):
+    """View executive boardroom HTML security audit report."""
+    return await export_scan_html(scan_id, db)
 
 
 @router.get("/{scan_id}/sarif")

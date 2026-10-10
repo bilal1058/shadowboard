@@ -86,6 +86,11 @@ export const ScanInspectorModal: React.FC<ScanInspectorModalProps> = ({ scanId, 
     window.open(url, '_blank');
   };
 
+  const handleOpenExecutiveHtml = () => {
+    const url = `/api/scans/${scanId}/export/html`;
+    window.open(url, '_blank');
+  };
+
   const getSeverityBadge = (severity: string) => {
     const sev = (severity || '').toUpperCase();
     if (sev === 'CRITICAL') {
@@ -167,12 +172,20 @@ export const ScanInspectorModal: React.FC<ScanInspectorModalProps> = ({ scanId, 
               </button>
             )}
             <button
+              onClick={handleOpenExecutiveHtml}
+              className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-600/60 text-emerald-300 transition-colors flex items-center space-x-1.5 shadow-sm"
+              title="Open boardroom-ready Executive HTML report with charts & remediation"
+            >
+              <span>📊</span>
+              <span>Executive HTML</span>
+            </button>
+            <button
               onClick={handleDownloadPdf}
               className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-[#1a1a24] hover:bg-[#252533] border border-[#332f3f] text-slate-200 transition-colors flex items-center space-x-1.5 shadow-sm"
               title="Download boardroom-ready cryptographic verification report"
             >
               <span>📄</span>
-              <span>Export Boardroom PDF</span>
+              <span>Boardroom PDF</span>
             </button>
             <button
               onClick={onClose}

@@ -898,12 +898,10 @@ async def get_scan_report(scan_id: int, db: aiosqlite.Connection = Depends(get_d
     return await get_scan_details(scan_id, db)
 
 
-@router.get("/{scan_id}/export/pdf")
-async def export_scan_pdf(scan_id: int, db: aiosqlite.Connection = Depends(get_db)):
-    """Generates and downloads an official boardroom-ready PDF security audit report."""
+async def _fetch_scan_report_artifacts(scan_id: int, db: aiosqlite.Connection):
+    """Fetches scan details, verified findings, and historical trajectory runs for executive reports."""
     scan_details = await get_scan_details(scan_id, db)
     
-    # Fetch findings with full provenance for report
     cursor = await db.execute(
         """
         SELECT f.id, f.finding_id, COALESCE(o.objective, f.owasp_category) as title, 
@@ -922,7 +920,7 @@ async def export_scan_pdf(scan_id: int, db: aiosqlite.Connection = Depends(get_d
         findings_list.append({
             "finding_id": r[1] if r[1] else f"F-{r[0]}",
             "title": r[2],
-            "description": r[7],  # remediation / description
+            "description": r[7],
             "severity": r[4],
             "evidence_hash": r[5],
             "policy_name": r[2],
@@ -931,14 +929,62 @@ async def export_scan_pdf(scan_id: int, db: aiosqlite.Connection = Depends(get_d
             "target_response": ev_json.get("response", "") or ev_json.get("response_text", "")
         })
 
+    target_id = scan_details.get("target_id")
+    history_runs = []
+    if target_id:
+        h_cursor = await db.execute(
+            """
+            SELECT id, overall_score, risk_grade, started_at, completed_at, mitigation_enabled
+            FROM scan_runs
+            WHERE target_id = ? AND status = 'COMPLETED'
+            ORDER BY id ASC
+            LIMIT 10
+            """,
+            (target_id,)
+        )
+        for hr in await h_cursor.fetchall():
+            history_runs.append({
+                "id": hr[0],
+                "overall_score": hr[1],
+                "risk_grade": hr[2],
+                "started_at": hr[3],
+                "completed_at": hr[4],
+                "mitigation_enabled": bool(hr[5])
+            })
+
+    return scan_details, findings_list, history_runs
+
+
+@router.get("/{scan_id}/export/pdf")
+async def export_scan_pdf(scan_id: int, db: aiosqlite.Connection = Depends(get_db)):
+    """Generates and downloads an official boardroom-ready PDF security audit report."""
+    scan_details, findings_list, history_runs = await _fetch_scan_report_artifacts(scan_id, db)
+
     from app.reports.pdf_generator import generate_scan_pdf_report
-    pdf_bytes = generate_scan_pdf_report(scan_details, findings_list)
+    pdf_bytes = generate_scan_pdf_report(scan_details, findings_list, history_runs=history_runs)
 
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
         headers={
             "Content-Disposition": f"attachment; filename=ShadowBoard_Audit_Scan_{scan_id}.pdf"
+        }
+    )
+
+
+@router.get("/{scan_id}/export/html")
+async def export_scan_html(scan_id: int, db: aiosqlite.Connection = Depends(get_db)):
+    """Generates and serves a self-contained, luxury boardroom HTML executive report."""
+    scan_details, findings_list, history_runs = await _fetch_scan_report_artifacts(scan_id, db)
+
+    from app.reports.html_generator import generate_scan_html_report
+    html_content = generate_scan_html_report(scan_details, findings_list, history_runs=history_runs)
+
+    return Response(
+        content=html_content,
+        media_type="text/html",
+        headers={
+            "Content-Disposition": f"inline; filename=ShadowBoard_Executive_Report_Scan_{scan_id}.html"
         }
     )
 
