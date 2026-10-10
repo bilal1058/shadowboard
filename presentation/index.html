@@ -340,7 +340,194 @@
             </section>
 
             <!-- =========================================================================
-                 SLIDE 2: PROJECT GOALS & OBJECTIVES — Layout: strategic/quad-mandate
+                 SLIDE 2: EXISTING SOLUTIONS & STANDARDS — Layout: competitive/taxonomy-matrix
+                 ========================================================================= -->
+            <section class="slide p-[70px] flex flex-col justify-between text-themeink">
+                <!-- Section Header -->
+                <div class="flex items-center justify-between border-b themed-divider pb-4 reveal">
+                    <div class="flex items-center gap-3">
+                        <span class="px-2.5 py-0.5 themed-badge text-xs uppercase font-mono">LANDSCAPE & TAXONOMY</span>
+                        <h2 class="font-display text-2xl font-bold tracking-tight">Existing Solutions & Security Standards</h2>
+                    </div>
+                    <span class="font-mono text-xs text-thememuted">02 / 15</span>
+                </div>
+
+                <!-- Main Content: Competitive Landscape & Taxonomy -->
+                <div class="my-auto py-2">
+                    <div class="flex items-start justify-between gap-8 mb-4">
+                        <div class="max-w-[1200px]">
+                            <span class="font-mono text-xs text-thememuted uppercase tracking-wider">// INDUSTRY BENCHMARK & THREAT HORIZON</span>
+                            <h3 class="font-display text-[38px] font-bold leading-none mt-1 slide-title-case">
+                                Prompt Fuzzers vs. Execution-Aware Platforms
+                            </h3>
+                            <p class="font-body text-sm text-thememuted mt-2 leading-relaxed">
+                                Current AI defense tools range from surface-level lexical fuzzers (L0) to hardware watchdogs (L3). While competitors observe text or intercept proxies, ShadowBoard provides verifiable, ground-truth testing across tools, data, and RAG pipelines.
+                            </p>
+                        </div>
+                        <div class="themed-card px-4 py-2.5 flex items-center gap-3 shrink-0">
+                            <span class="w-3 h-3 rounded-full bg-emerald-500 animate-pulse inline-block"></span>
+                            <div class="font-mono text-xs">
+                                <div class="font-bold text-themeink">STANDARDS ALIGNED</div>
+                                <div class="text-[10px] text-thememuted">OWASP GenAI • MITRE ATLAS • NIST AI RMF</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 4-Tier Solutions Spectrum Grid -->
+                    <div class="grid grid-cols-12 gap-4 mb-4 reveal reveal-d1">
+                        <!-- Tier 1: L0 Black-Box -->
+                        <div class="col-span-3 themed-card p-4 flex flex-col justify-between">
+                            <div>
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="font-mono text-[10px] font-bold themed-badge px-2 py-0.5">L0 TRUST // BLACK-BOX</span>
+                                    <span class="text-[11px] font-mono text-thememuted font-semibold">API FUZZING</span>
+                                </div>
+                                <div class="font-display text-base font-bold leading-tight">NVIDIA Garak / PyRIT</div>
+                                <div class="font-mono text-[11px] text-themeaccentfg mt-0.5">Prompt-Output Scanners</div>
+                                <p class="font-body text-xs text-thememuted mt-1.5 leading-relaxed">
+                                    Automated jailbreak testers probing output text for toxicity and injections. Blind to tool parameters, database mutations, and RAG exfiltration.
+                                </p>
+                            </div>
+                            <div class="mt-2.5 pt-2 border-t themed-divider font-mono text-[10px] text-rose-500 font-semibold">
+                                ⚠ LIMITATION: No execution or tool awareness
+                            </div>
+                        </div>
+
+                        <!-- Tier 2: L1 In-Process -->
+                        <div class="col-span-3 themed-card p-4 flex flex-col justify-between">
+                            <div>
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="font-mono text-[10px] font-bold themed-badge px-2 py-0.5">L1 TRUST // INLINE</span>
+                                    <span class="text-[11px] font-mono text-thememuted font-semibold">MIDDLEWARE</span>
+                                </div>
+                                <div class="font-display text-base font-bold leading-tight">AgentGuard / NeMo</div>
+                                <div class="font-mono text-[11px] text-themeaccentfg mt-0.5">In-Process Runtime Hooks</div>
+                                <p class="font-body text-xs text-thememuted mt-1.5 leading-relaxed">
+                                    Sits inline within LangChain/CrewAI runtimes, logging LLM calls and tool arguments. Relies on host process cooperation; lacks independent verification.
+                                </p>
+                            </div>
+                            <div class="mt-2.5 pt-2 border-t themed-divider font-mono text-[10px] text-amber-500 font-semibold">
+                                ⚠ LIMITATION: Lacks cryptographic evidence & AST schemas
+                            </div>
+                        </div>
+
+                        <!-- Tier 3: L2 Proxy -->
+                        <div class="col-span-3 themed-card p-4 flex flex-col justify-between">
+                            <div>
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="font-mono text-[10px] font-bold themed-badge px-2 py-0.5">L2 TRUST // PROXY</span>
+                                    <span class="text-[11px] font-mono text-thememuted font-semibold">GOVERNANCE</span>
+                                </div>
+                                <div class="font-display text-base font-bold leading-tight">Trussed AI / MCP Proxies</div>
+                                <div class="font-mono text-[11px] text-themeaccentfg mt-0.5">Sidecar Enforcement Plane</div>
+                                <p class="font-body text-xs text-thememuted mt-1.5 leading-relaxed">
+                                    Enterprise API proxy monitoring Model Context Protocol (MCP) calls and DB queries. Designed for live microservices rather than CI/CD regression testing.
+                                </p>
+                            </div>
+                            <div class="mt-2.5 pt-2 border-t themed-divider font-mono text-[10px] text-amber-500 font-semibold">
+                                ⚠ LIMITATION: Proprietary SaaS, runtime latency overhead
+                            </div>
+                        </div>
+
+                        <!-- Tier 4: L3 Silicon -->
+                        <div class="col-span-3 themed-card p-4 flex flex-col justify-between">
+                            <div>
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="font-mono text-[10px] font-bold themed-badge px-2 py-0.5">L3 TRUST // HARDWARE</span>
+                                    <span class="text-[11px] font-mono text-thememuted font-semibold">SILICON ENCLAVE</span>
+                                </div>
+                                <div class="font-display text-base font-bold leading-tight">NVIDIA Open Agent Safety</div>
+                                <div class="font-mono text-[11px] text-themeaccentfg mt-0.5">OpenShell & Sentry Watchdog</div>
+                                <p class="font-body text-xs text-thememuted mt-1.5 leading-relaxed">
+                                    Hardware-enforced monitoring on Vera CPUs and BlueField DPUs. Tamper-proof silicon counters for robotics and enterprise clusters.
+                                </p>
+                            </div>
+                            <div class="mt-2.5 pt-2 border-t themed-divider font-mono text-[10px] text-rose-500 font-semibold">
+                                ⚠ LIMITATION: Specialized hardware lock-in; heavy infra
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Comparison Table: ShadowBoard vs The Market -->
+                    <div class="themed-card p-3.5 overflow-hidden reveal reveal-d2">
+                        <div class="flex items-center justify-between border-b themed-divider pb-2 mb-2 font-mono text-xs">
+                            <span class="font-bold text-themeink uppercase tracking-wider">Comparative Architecture Matrix (Trust & Evidence Taxonomy)</span>
+                            <span class="text-thememuted">SOURCE: INDEPENDENT AI-AGENT SECURITY SURVEY (2026)</span>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left text-xs font-mono">
+                                <thead>
+                                    <tr class="border-b themed-divider text-thememuted text-[10px]">
+                                        <th class="pb-1.5 font-semibold">SOLUTION</th>
+                                        <th class="pb-1.5 font-semibold">EXECUTION SCOPE</th>
+                                        <th class="pb-1.5 font-semibold">TRUST LEVEL</th>
+                                        <th class="pb-1.5 font-semibold">SUBSTRATES COVERED</th>
+                                        <th class="pb-1.5 font-semibold">FORENSIC EVIDENCE</th>
+                                        <th class="pb-1.5 font-semibold">CI/CD GATING</th>
+                                        <th class="pb-1.5 font-semibold">PRIMARY DEFICIT</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y themed-divider text-[10px]">
+                                    <tr class="bg-emerald-950/20 text-themeink font-bold">
+                                        <td class="py-1.5 text-emerald-400">🛡️ ShadowBoard</td>
+                                        <td class="py-1.5">Full Agent Execution</td>
+                                        <td class="py-1.5"><span class="px-1.5 py-0.2 rounded themed-badge text-[9px]">L1/L2 Decoupled</span></td>
+                                        <td class="py-1.5 text-emerald-400">Tools + SQL DB + Vector RAG + Egress</td>
+                                        <td class="py-1.5">SHA-256 Hash Chains + Ed25519 Signatures</td>
+                                        <td class="py-1.5 text-emerald-400">CLI / SARIF Native Gate</td>
+                                        <td class="py-1.5 text-thememuted font-normal">Emerging platform (pre-cloud SaaS)</td>
+                                    </tr>
+                                    <tr class="text-thememuted">
+                                        <td class="py-1.5 font-semibold text-themeink">NVIDIA Garak</td>
+                                        <td class="py-1.5">Model Text Output Only</td>
+                                        <td class="py-1.5">L0 (Black-Box API)</td>
+                                        <td class="py-1.5">LLM Output Text Only</td>
+                                        <td class="py-1.5">Flat JSON Reports</td>
+                                        <td class="py-1.5">Scriptable CLI</td>
+                                        <td class="py-1.5 text-rose-400">Cannot observe tool calls or database state</td>
+                                    </tr>
+                                    <tr class="text-thememuted">
+                                        <td class="py-1.5 font-semibold text-themeink">AgentGuard (OSS)</td>
+                                        <td class="py-1.5">In-Process Runtime</td>
+                                        <td class="py-1.5">L1 (In-Memory Hook)</td>
+                                        <td class="py-1.5">LLM Calls, Tool Arguments</td>
+                                        <td class="py-1.5">Local Action Logs (Unsigned)</td>
+                                        <td class="py-1.5">Library Integration Only</td>
+                                        <td class="py-1.5 text-amber-400">No cryptographic audit; relies on host agent</td>
+                                    </tr>
+                                    <tr class="text-thememuted">
+                                        <td class="py-1.5 font-semibold text-themeink">Trussed AI</td>
+                                        <td class="py-1.5">API / Network Proxy</td>
+                                        <td class="py-1.5">L2 (Sidecar Proxy)</td>
+                                        <td class="py-1.5">Model Context Protocol (MCP), APIs</td>
+                                        <td class="py-1.5">Centralized Cloud SaaS Logs</td>
+                                        <td class="py-1.5">Runtime Enforcement Only</td>
+                                        <td class="py-1.5 text-amber-400">Proprietary closed-source; sidecar latency</td>
+                                    </tr>
+                                    <tr class="text-thememuted">
+                                        <td class="py-1.5 font-semibold text-themeink">NVIDIA OpenShell</td>
+                                        <td class="py-1.5">Hardware / Compute Stack</td>
+                                        <td class="py-1.5">L3 (Silicon Enclave)</td>
+                                        <td class="py-1.5">CPU/DPU Compute, Network, OS</td>
+                                        <td class="py-1.5">Out-of-Band Hardware Telemetry</td>
+                                        <td class="py-1.5">Production Cluster Only</td>
+                                        <td class="py-1.5 text-rose-400">Requires Vera CPUs & BlueField DPUs; vendor locked</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer Sign-off -->
+                <div class="border-t themed-divider pt-3 flex items-center justify-between font-mono text-xs text-thememuted">
+                    <span>KEY TAKEAWAY: Existing solutions stop at text filtering or require hardware enclaves—ShadowBoard delivers software-defined, cryptographically audited CI/CD assurance.</span>
+                    <span>COMPETITIVE TAXONOMY & STANDARDS MATRIX</span>
+                </div>
+            </section>
+
+            <!-- =========================================================================
+                 SLIDE 3: PROJECT GOALS & OBJECTIVES — Layout: strategic/quad-mandate
                  ========================================================================= -->
             <section class="slide p-[70px] flex flex-col justify-between text-themeink">
                 <!-- Section Header -->
@@ -349,7 +536,7 @@
                         <span class="px-2.5 py-0.5 themed-badge text-xs uppercase font-mono">PROJECT GOALS</span>
                         <h2 class="font-display text-2xl font-bold tracking-tight">Core Objectives & Security Mandates</h2>
                     </div>
-                    <span class="font-mono text-xs text-thememuted">02 / 14</span>
+                    <span class="font-mono text-xs text-thememuted">03 / 15</span>
                 </div>
 
                 <!-- Main Content: Strategic Charter & 4 Objectives -->
@@ -444,7 +631,7 @@
             </section>
 
 <!-- =========================================================================
-                 SLIDE 3: DEVELOPMENT APPROACH & METHODOLOGY — Layout: engineering/quad-pipeline
+                 SLIDE 4: DEVELOPMENT APPROACH & METHODOLOGY — Layout: engineering/quad-pipeline
                  ========================================================================= -->
             <section class="slide p-[70px] flex flex-col justify-between text-themeink">
                 <!-- Section Header -->
@@ -453,7 +640,7 @@
                         <span class="px-2.5 py-0.5 themed-badge text-xs uppercase font-mono">DEVELOPMENT APPROACH</span>
                         <h2 class="font-display text-2xl font-bold tracking-tight">Engineering Methodology & Architectural Framework</h2>
                     </div>
-                    <span class="font-mono text-xs text-thememuted">03 / 14</span>
+                    <span class="font-mono text-xs text-thememuted">04 / 15</span>
                 </div>
 
                 <!-- Main Content: Methodology Charter & 4 Pillars -->
@@ -548,7 +735,7 @@
             </section>
 
             <!-- =========================================================================
-                 SLIDE 4: CORE PLATFORM — Executive Dashboard & Live Scan
+                 SLIDE 5: CORE PLATFORM — Executive Dashboard & Live Scan
                  ========================================================================= -->
             <section class="slide p-[70px] flex flex-col justify-between text-themeink">
                 <!-- Section Header -->
@@ -557,7 +744,7 @@
                         <span class="px-2.5 py-0.5 themed-badge text-xs uppercase font-mono">CORE PLATFORM</span>
                         <h2 class="font-display text-2xl font-bold tracking-tight">Executive Security Command Center & SSE Attack Stream</h2>
                     </div>
-                    <span class="font-mono text-xs text-thememuted">04 / 14</span>
+                    <span class="font-mono text-xs text-thememuted">05 / 15</span>
                 </div>
 
                 <!-- Two-Column Showcase Layout -->
@@ -619,7 +806,7 @@
             </section>
 
             <!-- =========================================================================
-                 SLIDE 5: DEEP TRACE AUDIT — Dialogue & Strategy Inspector
+                 SLIDE 6: DEEP TRACE AUDIT — Dialogue & Strategy Inspector
                  ========================================================================= -->
             <section class="slide p-[70px] flex flex-col justify-between text-themeink">
                 <div class="flex items-center justify-between border-b themed-divider pb-4 reveal">
@@ -627,7 +814,7 @@
                         <span class="px-2.5 py-0.5 themed-badge text-xs uppercase font-mono">DEEP TRACE AUDIT</span>
                         <h2 class="font-display text-2xl font-bold tracking-tight">Dialogue Inspector: Verbatim Attack Prompts & Responses</h2>
                     </div>
-                    <span class="font-mono text-xs text-thememuted">05 / 14</span>
+                    <span class="font-mono text-xs text-thememuted">06 / 15</span>
                 </div>
 
                 <div class="grid grid-cols-12 gap-8 items-center my-auto py-4">
@@ -680,7 +867,7 @@
             </section>
 
             <!-- =========================================================================
-                 SLIDE 6: FORMAL SPECIFICATION — Pydantic Policy Contracts
+                 SLIDE 7: FORMAL SPECIFICATION — Pydantic Policy Contracts
                  ========================================================================= -->
             <section class="slide p-[70px] flex flex-col justify-between text-themeink">
                 <div class="flex items-center justify-between border-b themed-divider pb-4 reveal">
@@ -688,7 +875,7 @@
                         <span class="px-2.5 py-0.5 themed-badge text-xs uppercase font-mono">FORMAL SPECIFICATION</span>
                         <h2 class="font-display text-2xl font-bold tracking-tight">Security Policies as Declarative Code Contracts</h2>
                     </div>
-                    <span class="font-mono text-xs text-thememuted">06 / 14</span>
+                    <span class="font-mono text-xs text-thememuted">07 / 15</span>
                 </div>
 
                 <div class="grid grid-cols-12 gap-8 items-center my-auto py-4">
@@ -741,7 +928,7 @@
             </section>
 
             <!-- =========================================================================
-                 SLIDE 7: REALISTIC RAG CORPUS — Enterprise PDF Knowledge Vault
+                 SLIDE 8: REALISTIC RAG CORPUS — Enterprise PDF Knowledge Vault
                  ========================================================================= -->
             <section class="slide p-[70px] flex flex-col justify-between text-themeink">
                 <div class="flex items-center justify-between border-b themed-divider pb-4 reveal">
@@ -749,7 +936,7 @@
                         <span class="px-2.5 py-0.5 themed-badge text-xs uppercase font-mono">REALISTIC RAG CORPUS</span>
                         <h2 class="font-display text-2xl font-bold tracking-tight">Multi-Tier Enterprise PDF Dataset & Vector Ingestion</h2>
                     </div>
-                    <span class="font-mono text-xs text-thememuted">07 / 14</span>
+                    <span class="font-mono text-xs text-thememuted">08 / 15</span>
                 </div>
 
                 <div class="grid grid-cols-12 gap-8 items-center my-auto py-4">
@@ -802,7 +989,7 @@
             </section>
 
             <!-- =========================================================================
-                 SLIDE 8: ADVANCED THREAT VECTORS — Trojan Indirect Prompt Injections
+                 SLIDE 9: ADVANCED THREAT VECTORS — Trojan Indirect Prompt Injections
                  ========================================================================= -->
             <section class="slide p-[70px] flex flex-col justify-between text-themeink">
                 <div class="flex items-center justify-between border-b themed-divider pb-4 reveal">
@@ -810,7 +997,7 @@
                         <span class="px-2.5 py-0.5 themed-badge text-xs uppercase font-mono">ADVANCED THREAT VECTORS</span>
                         <h2 class="font-display text-2xl font-bold tracking-tight">Trojan Ingestion: Indirect Prompt Injection via Third-Party PDFs</h2>
                     </div>
-                    <span class="font-mono text-xs text-thememuted">08 / 14</span>
+                    <span class="font-mono text-xs text-thememuted">09 / 15</span>
                 </div>
 
                 <div class="grid grid-cols-12 gap-8 items-center my-auto py-4">
@@ -863,7 +1050,7 @@
             </section>
 
             <!-- =========================================================================
-                 SLIDE 9: HANDS-ON WORKBENCH — Interactive Adversarial Sandbox
+                 SLIDE 10: HANDS-ON WORKBENCH — Interactive Adversarial Sandbox
                  ========================================================================= -->
             <section class="slide p-[70px] flex flex-col justify-between text-themeink">
                 <div class="flex items-center justify-between border-b themed-divider pb-4 reveal">
@@ -871,7 +1058,7 @@
                         <span class="px-2.5 py-0.5 themed-badge text-xs uppercase font-mono">HANDS-ON WORKBENCH</span>
                         <h2 class="font-display text-2xl font-bold tracking-tight">Interactive Live Adversarial Sandbox</h2>
                     </div>
-                    <span class="font-mono text-xs text-thememuted">09 / 14</span>
+                    <span class="font-mono text-xs text-thememuted">10 / 15</span>
                 </div>
 
                 <div class="grid grid-cols-12 gap-8 items-center my-auto py-4">
@@ -924,7 +1111,7 @@
             </section>
 
             <!-- =========================================================================
-                 SLIDE 10: FACTUAL INTEGRITY — Groundedness & Hallucination Defense
+                 SLIDE 11: FACTUAL INTEGRITY — Groundedness & Hallucination Defense
                  ========================================================================= -->
             <section class="slide p-[70px] flex flex-col justify-between text-themeink">
                 <div class="flex items-center justify-between border-b themed-divider pb-4 reveal">
@@ -932,7 +1119,7 @@
                         <span class="px-2.5 py-0.5 themed-badge text-xs uppercase font-mono">FACTUAL INTEGRITY</span>
                         <h2 class="font-display text-2xl font-bold tracking-tight">Groundedness & Hallucination Defense (OWASP LLM09)</h2>
                     </div>
-                    <span class="font-mono text-xs text-thememuted">10 / 14</span>
+                    <span class="font-mono text-xs text-thememuted">11 / 15</span>
                 </div>
 
                 <div class="grid grid-cols-12 gap-8 items-center my-auto py-4">
@@ -985,7 +1172,7 @@
             </section>
 
             <!-- =========================================================================
-                 SLIDE 11: CLOSED-LOOP RETEST — Before vs. After Proof (The "Wow" Moment)
+                 SLIDE 12: CLOSED-LOOP RETEST — Before vs. After Proof (The "Wow" Moment)
                  ========================================================================= -->
             <section class="slide p-[70px] flex flex-col justify-between text-themeink">
                 <div class="flex items-center justify-between border-b themed-divider pb-4 reveal">
@@ -993,7 +1180,7 @@
                         <span class="px-2.5 py-0.5 themed-badge text-xs uppercase font-mono">CLOSED-LOOP RETEST</span>
                         <h2 class="font-display text-2xl font-bold tracking-tight">Empirical Proof: Vulnerability Discovery to Verified Mitigation</h2>
                     </div>
-                    <span class="font-mono text-xs text-thememuted">11 / 14</span>
+                    <span class="font-mono text-xs text-thememuted">12 / 15</span>
                 </div>
 
                 <div class="grid grid-cols-12 gap-8 items-center my-auto py-4">
@@ -1047,7 +1234,7 @@
             </section>
 
             <!-- =========================================================================
-                 SLIDE 12: NON-REPUDIATION — Cryptographic Evidence Ledger
+                 SLIDE 13: NON-REPUDIATION — Cryptographic Evidence Ledger
                  ========================================================================= -->
             <section class="slide p-[70px] flex flex-col justify-between text-themeink">
                 <div class="flex items-center justify-between border-b themed-divider pb-4 reveal">
@@ -1055,7 +1242,7 @@
                         <span class="px-2.5 py-0.5 themed-badge text-xs uppercase font-mono">NON-REPUDIATION</span>
                         <h2 class="font-display text-2xl font-bold tracking-tight">Tamper-Proof Audit: Cryptographic SHA-256 Hashing</h2>
                     </div>
-                    <span class="font-mono text-xs text-thememuted">12 / 14</span>
+                    <span class="font-mono text-xs text-thememuted">13 / 15</span>
                 </div>
 
                 <div class="grid grid-cols-12 gap-8 items-center my-auto py-4">
@@ -1108,7 +1295,7 @@
             </section>
 
             <!-- =========================================================================
-                 SLIDE 13: ENTERPRISE GOVERNANCE — Compliance Matrix & PDF Export
+                 SLIDE 14: ENTERPRISE GOVERNANCE — Compliance Matrix & PDF Export
                  ========================================================================= -->
             <section class="slide p-[70px] flex flex-col justify-between text-themeink">
                 <div class="flex items-center justify-between border-b themed-divider pb-4 reveal">
@@ -1116,7 +1303,7 @@
                         <span class="px-2.5 py-0.5 themed-badge text-xs uppercase font-mono">ENTERPRISE GOVERNANCE</span>
                         <h2 class="font-display text-2xl font-bold tracking-tight">Executive Compliance Matrix & Boardroom PDF Export</h2>
                     </div>
-                    <span class="font-mono text-xs text-thememuted">13 / 14</span>
+                    <span class="font-mono text-xs text-thememuted">14 / 15</span>
                 </div>
 
                 <div class="grid grid-cols-12 gap-8 items-center my-auto py-4">
@@ -1169,7 +1356,7 @@
             </section>
 
             <!-- =========================================================================
-                 SLIDE 14: SUMMARY & STRATEGIC IMPACT — Layout: closing/terminal-frame
+                 SLIDE 15: SUMMARY & STRATEGIC IMPACT — Layout: closing/terminal-frame
                  ========================================================================= -->
             <section class="slide p-[70px] flex flex-col justify-between text-themeink">
                 <div class="flex items-center justify-between border-b themed-divider pb-4 reveal">
@@ -1177,7 +1364,7 @@
                         <span class="px-2.5 py-0.5 themed-badge text-xs uppercase font-mono">SUMMARY & IMPACT</span>
                         <h2 class="font-display text-2xl font-bold tracking-tight">The Future of High-Assurance AI Security</h2>
                     </div>
-                    <span class="font-mono text-xs text-thememuted">14 / 14</span>
+                    <span class="font-mono text-xs text-thememuted">15 / 15</span>
                 </div>
 
                 <div class="my-auto py-6">
@@ -1251,7 +1438,7 @@
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
         </button>
 
-        <span class="font-mono text-xs tracking-wider" id="slideCounter">01 / 14</span>
+        <span class="font-mono text-xs tracking-wider" id="slideCounter">01 / 15</span>
 
         <button onclick="nextSlide()" class="p-1 hover:text-white text-zinc-400 transition-colors" title="Next Slide (Right Arrow or Space)">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>

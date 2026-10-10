@@ -1,6 +1,6 @@
 """
 Visual Pitch Deck Generator with Embedded UI Screenshots
-Creates a 14-slide 16:9 widescreen presentation (ShadowBoard_Presentation.pptx)
+Creates a 15-slide 16:9 widescreen presentation (ShadowBoard_Presentation.pptx)
 featuring real screenshots of every aspect of ShadowBoard with simple, non-bloated explanations.
 """
 
@@ -313,11 +313,31 @@ def generate_visual_deck(output_path: str, artifact_dir: str):
         pd.font.color.rgb = TEXT_MUTED
 
 
+
     # =========================================================================
-    # SLIDE 2: PROJECT GOALS & OBJECTIVES
+    # SLIDE 2: EXISTING SOLUTIONS & STANDARDS TAXONOMY
     # =========================================================================
     add_quad_card_slide(
-        slide_num="Slide 02 • Strategic Mission",
+        slide_num="Slide 02 • Competitive Landscape",
+        title="Existing Solutions & Security Standards Taxonomy",
+        subtitle="Classifying current industry offerings across telemetry trust levels (L0–L3) and execution scope.",
+        lead_title="PROMPT FUZZERS VS. EXECUTION-AWARE PLATFORMS",
+        lead_desc="Competitors either test model text in isolation (L0) or require specialized hardware (L3). ShadowBoard provides software-defined, ground-truth assurance across tools, RAG, and databases.",
+        cards=[
+            ("L0 // BLACK-BOX", "NVIDIA Garak / PyRIT", "Output text fuzzing only. Probes jailbreaks and toxicity via API, but blind to tool parameters, database mutations, and RAG data exfiltration.", "⚠ NO TOOL/DB AWARENESS"),
+            ("L1 // MIDDLEWARE", "AgentGuard / NeMo", "In-process library hooks for LangChain/CrewAI. Logs actions locally, but lacks independent verification, offline auditing, or Pydantic AST schemas.", "⚠ NO CRYPTO AUDIT TRAIL"),
+            ("L2 // PROXY GATE", "Trussed AI / MCP", "Enterprise sidecar proxy intercepting Model Context Protocol (MCP) and APIs. Built for live production rather than repeatable CI/CD regression testing.", "⚠ RUNTIME LATENCY OVERHEAD"),
+            ("L3 // SILICON", "NVIDIA OpenShell", "Hardware-enforced monitoring on Vera CPUs and BlueField DPUs. Tamper-proof silicon counters, but requires specialized enterprise server hardware.", "⚠ VENDOR HARDWARE LOCK-IN")
+        ],
+        takeaway="Existing tools stop at text or lock into hardware—ShadowBoard brings cryptographically audited CI/CD gating.",
+        accent_color=ACCENT_AMBER
+    )
+
+    # =========================================================================
+    # SLIDE 3: PROJECT GOALS & OBJECTIVES
+    # =========================================================================
+    add_quad_card_slide(
+        slide_num="Slide 03 • Strategic Mission",
         title="Project Goals & Security Objectives",
         subtitle="Definitive cyber-assurance mandates for autonomous, tool-using enterprise AI systems.",
         lead_title="DETERMINISTIC SECURITY GUARANTEES FOR ENTERPRISE AI",
@@ -333,10 +353,10 @@ def generate_visual_deck(output_path: str, artifact_dir: str):
     )
 
     # =========================================================================
-    # SLIDE 3: DEVELOPMENT APPROACH & METHODOLOGY
+    # SLIDE 4: DEVELOPMENT APPROACH & METHODOLOGY
     # =========================================================================
     add_quad_card_slide(
-        slide_num="Slide 03 • System Methodology",
+        slide_num="Slide 04 • System Methodology",
         title="Development Approach & Engineering Methodology",
         subtitle="Rigorous DevSecOps paradigm engineered for continuous regression verification.",
         lead_title="CONTINUOUS DEVSECOPS & ARCHITECTURAL ISOLATION",
@@ -355,7 +375,7 @@ def generate_visual_deck(output_path: str, artifact_dir: str):
     # SLIDE 2: Executive Dashboard & Live Scan Execution
     # =========================================================================
     add_screenshot_slide(
-        slide_num="Slide 04 • Core Platform",
+        slide_num="Slide 05 • Core Platform",
         title="Executive Security Dashboard & Live Attack Execution",
         subtitle="Clean cyber-defense interface streaming live scans, policy coverage, and risk grading.",
         image_name="main_dashboard_1788799639913.png",
@@ -373,7 +393,7 @@ def generate_visual_deck(output_path: str, artifact_dir: str):
     # SLIDE 3: Dialogue Inspector (Verbatim Prompts & Model Replies)
     # =========================================================================
     add_screenshot_slide(
-        slide_num="Slide 05 • Deep Trace Audit",
+        slide_num="Slide 06 • Deep Trace Audit",
         title="Dialogue Inspector: Verbatim Attack Prompts & Responses",
         subtitle="Full transparency into what the attacker sent and exactly how the target reacted.",
         image_name="dialogue_inspect_1788721791298.png",
@@ -391,7 +411,7 @@ def generate_visual_deck(output_path: str, artifact_dir: str):
     # SLIDE 4: Security Policy Contracts (Policy-as-Code)
     # =========================================================================
     add_screenshot_slide(
-        slide_num="Slide 06 • Formal Specification",
+        slide_num="Slide 07 • Formal Specification",
         title="Security Policies: Formal Guardrail Contracts",
         subtitle="Moving from fuzzy English prompts to declarative Pydantic schemas (JSON).",
         image_name="security_policies_page_1788720119845.png",
@@ -463,7 +483,7 @@ def generate_visual_deck(output_path: str, artifact_dir: str):
     # SLIDE 8: Groundedness & Hallucination Defense
     # =========================================================================
     add_screenshot_slide(
-        slide_num="Slide 10 • Factual Integrity",
+        slide_num="Slide 11 • Factual Integrity",
         title="Groundedness & Hallucination Defense (OWASP LLM09)",
         subtitle="Verifying that models admit lack of knowledge rather than fabricating false policies.",
         image_name="groundedness_probe_results_1788801133480.png",
@@ -499,7 +519,7 @@ def generate_visual_deck(output_path: str, artifact_dir: str):
     # SLIDE 10: Cryptographic SHA-256 Evidence Hash Verification
     # =========================================================================
     add_screenshot_slide(
-        slide_num="Slide 12 • Non-Repudiation",
+        slide_num="Slide 13 • Non-Repudiation",
         title="Tamper-Proof Audit: Cryptographic SHA-256 Hashing",
         subtitle="Every finding is cryptographically bound to its raw execution trace.",
         image_name="verify_hash_modal_1788716696945.png",
@@ -536,7 +556,7 @@ def generate_visual_deck(output_path: str, artifact_dir: str):
     # =========================================================================
     s12 = prs.slides.add_slide(blank_layout)
     add_bg(s12)
-    add_header(s12, "Slide 14 • Summary & Impact", "Why ShadowBoard Sets the Standard for AI Security",
+    add_header(s12, "Slide 15 • Summary & Impact", "Why ShadowBoard Sets the Standard for AI Security",
                "Transforming AI evaluation from toy prompt games into high-assurance enterprise DevSecOps.")
 
     cards_data = [
