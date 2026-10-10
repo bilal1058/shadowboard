@@ -132,12 +132,11 @@ def test_ssrf_validation_blocks_illegal_schemes_and_ranges():
     assert cleaned == "http://127.0.0.1:8000/target-app"
 
 
-def test_target_api_endpoints_enforce_ssrf_blocking(client):
-    """0.7: POST /api/targets and test-connection reject SSRF payloads with 400."""
-    # Test-connection with metadata IP
+def test_target_api_endpoints_do_not_expose_custom_url_probing(client):
+    """0.7: custom target registration and URL probing are deliberately disabled."""
+    # The endpoint was removed rather than attempting to validate arbitrary URLs.
     resp_tc = client.post("/api/targets/test-connection", json={"base_url": "http://169.254.169.254/latest"})
-    assert resp_tc.status_code == 400
-    assert "SSRF validation" in resp_tc.json()["detail"]
+    assert resp_tc.status_code == 405
 
     # Target registration with private IP
     resp_create = client.post(
@@ -151,8 +150,7 @@ def test_target_api_endpoints_enforce_ssrf_blocking(client):
             "capabilities": {"chat": True, "rag": False, "tools": False, "data_access": False, "tool_names": []},
         },
     )
-    assert resp_create.status_code == 400
-    assert "SSRF validation" in resp_create.json()["detail"]
+    assert resp_create.status_code == 405
 
 
 @pytest.mark.asyncio

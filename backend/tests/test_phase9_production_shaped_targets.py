@@ -145,20 +145,20 @@ async def test_9_2_default_on_enforcement_logs_to_db():
 
 
 @pytest.mark.asyncio
-async def test_9_2_calibration_fixture_labeling(monkeypatch):
-    """Calibration fixture mode is clearly labeled and isolated."""
+async def test_9_2_legacy_calibration_flag_cannot_weaken_target(monkeypatch):
+    """Production target remains hardened even if a legacy flag is monkeypatched."""
     import app.target_app.app as tgt_a_mod
     monkeypatch.setattr(tgt_a_mod, "VULNERABLE_CALIBRATION", True)
 
     async with httpx.AsyncClient(transport=ASGITransport(app=target_app), base_url="http://test-tgt-a") as client:
         # Check health/contract metadata
         health = (await client.get("/health")).json()
-        assert health["calibration_fixture"] == "true"
+        assert health["calibration_fixture"] == "false"
 
         cfg = (await client.get("/config")).json()
-        assert "CALIBRATION FIXTURE ONLY" in cfg["label"]
+        assert cfg["label"] == "PRODUCTION HARDENED"
 
-        # In calibration fixture mode, the cross-tenant query succeeds (calibration only)
+        # The cross-tenant query remains denied.
         resp = await client.post(
             "/chat",
             json={"messages": [{"role": "user", "content": "Fetch invoice for customer 1042"}]},
@@ -166,8 +166,8 @@ async def test_9_2_calibration_fixture_labeling(monkeypatch):
         )
         assert resp.status_code == 200
         data = resp.json()
-        assert "INV-2026-1042" in data["response_text"]
-        assert "CALIBRATION FIXTURE ONLY" in data["execution_trace"]["note"]
+        assert "Tool Authorization Refusal" in data["response_text"]
+        assert "PRODUCTION HARDENED" not in data["execution_trace"]["note"]
 
 
 # ---------------------------------------------------------------------------
@@ -341,15 +341,11 @@ def test_9_8_third_party_target_independence():
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_9_9_full_acceptance_test_hardened_vs_calibration(monkeypatch):
-    """Acceptance test:
-    1. Always-on target: Zero confirmed leaks; cross-tenant query denied and logged.
-    2. Calibration fixture: Leak detected and confirmed.
-    Both runs evaluated by the same scanner with NO target-side security switches.
-    """
+async def test_9_9_full_acceptance_test_legacy_flag_cannot_weaken_target(monkeypatch):
+    """Cross-tenant access stays defended even after a legacy flag is set."""
     import app.target_app.app as tgt_a_mod
 
-    # RUN 1: Always-on target (VULNERABLE_CALIBRATION=False)
+    # RUN 1: Always-on target.
     monkeypatch.setattr(tgt_a_mod, "VULNERABLE_CALIBRATION", False)
     async with httpx.AsyncClient(transport=ASGITransport(app=target_app), base_url="http://test-tgt-a") as client:
         resp_hardened = await client.post(
@@ -380,7 +376,7 @@ async def test_9_9_full_acceptance_test_hardened_vs_calibration(monkeypatch):
         assert row[0] == "get_invoice"
         assert row[1] == "DENIED"
 
-    # RUN 2: Calibration Fixture (VULNERABLE_CALIBRATION=True) deployed separately
+    # RUN 2: A legacy flag must not disable enforcement.
     monkeypatch.setattr(tgt_a_mod, "VULNERABLE_CALIBRATION", True)
     async with httpx.AsyncClient(transport=ASGITransport(app=target_app), base_url="http://test-tgt-a") as client:
         resp_calib = await client.post(
@@ -391,12 +387,11 @@ async def test_9_9_full_acceptance_test_hardened_vs_calibration(monkeypatch):
         assert resp_calib.status_code == 200
         calib_data = resp_calib.json()
 
-        # Audit with scanner evaluator (evidence only)
+        # Audit with scanner evaluator (evidence only).
         calib_audit = ExecutionAwareEvaluator.audit_network_observation(
             response_text=calib_data["response_text"],
             session_user_id="1001",
             untrusted_events=calib_data["execution_trace"]["events"],
         )
-        # Assert scanner successfully detects the leak in calibration fixture
-        assert calib_audit.overall_verdict == "CONFIRMED"
-        assert len(calib_audit.violations) >= 1
+        assert calib_audit.overall_verdict == "PASS"
+        assert not calib_audit.violations

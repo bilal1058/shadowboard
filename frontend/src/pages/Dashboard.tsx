@@ -18,21 +18,8 @@ export const DashboardPage: React.FC = () => {
   const [adminSessionActive, setAdminSessionActive] = useState<boolean>(false);
   const [apiKeyModalOpen, setApiKeyModalOpen] = useState<boolean>(false);
 
-  // Connect Custom Target (Link option for industry testing)
-  const [customTargetModalOpen, setCustomTargetModalOpen] = useState<boolean>(false);
-  const [customName, setCustomName] = useState<string>('');
-  const [customUrl, setCustomUrl] = useState<string>('');
-  const [customModel, setCustomModel] = useState<string>('gpt-4o');
-  const [customToolNames, setCustomToolNames] = useState<string>('get_invoice, send_email');
-  const [isCreatingTarget, setIsCreatingTarget] = useState<boolean>(false);
-
-  // Filter out simple chatbots without tools; retain tool-enabled chatbots and custom industry targets
-  const visibleTargets = targets.filter((tgt) => {
-    if (tgt.base_url?.includes('/target-app') || tgt.name === 'Meridian Support Assistant') {
-      return false;
-    }
-    return true;
-  });
+  // Registered reference targets available to the console.
+  const visibleTargets = targets;
 
   const { trigger, isScanning } = useTriggerScan(selectedTargetId);
 
@@ -75,51 +62,6 @@ export const DashboardPage: React.FC = () => {
       await refreshScans();
     } catch (error: any) {
       toast.error(error.message || 'Administrative authentication failed');
-    }
-  };
-
-  const handleCreateCustomTarget = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!customUrl.trim()) {
-      toast.error('Target URL is required');
-      return;
-    }
-    setIsCreatingTarget(true);
-    try {
-      const url = customUrl.trim();
-      let defaultName = 'Custom Industry Chatbot';
-      try {
-        defaultName = `Chatbot (${new URL(url).hostname})`;
-      } catch {}
-      const name = customName.trim() || defaultName;
-      const toolNamesList = customToolNames
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean);
-      const created = await api.post<Target>('/targets', {
-        name,
-        base_url: url,
-        model_name: customModel.trim() || 'custom-agent',
-        target_type: 'INTERNAL_RAG',
-        target_mode: 'BLACK_BOX',
-        capabilities: {
-          chat: true,
-          rag: true,
-          tools: toolNamesList.length > 0,
-          data_access: toolNamesList.length > 0,
-          tool_names: toolNamesList,
-        },
-      });
-      toast.success(`Industry Target "${name}" connected successfully!`);
-      setCustomTargetModalOpen(false);
-      setCustomName('');
-      setCustomUrl('');
-      await refreshTargets();
-      setSelectedTargetId(created.id);
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to connect custom target URL');
-    } finally {
-      setIsCreatingTarget(false);
     }
   };
 
@@ -253,16 +195,9 @@ export const DashboardPage: React.FC = () => {
                     <span>🎯</span>
                     <span>Target Substrate &amp; Dispatcher</span>
                   </h2>
-                  <p className="text-xs text-slate-400 mt-0.5">Select a registered AI agent or connect a custom endpoint URL to execute automated adversarial probes</p>
+                  <p className="text-xs text-slate-400 mt-0.5">Select a registered reference agent to execute automated adversarial probes.</p>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <button
-                    onClick={() => setCustomTargetModalOpen(true)}
-                    className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition-colors flex items-center space-x-1.5 shadow-md shadow-indigo-950/50"
-                  >
-                    <span>🔗</span>
-                    <span>Connect Target URL</span>
-                  </button>
                   <button
                     onClick={() => setActiveTab('targets')}
                     className="px-3 py-1.5 rounded-lg text-xs text-slate-300 hover:text-white bg-[#181822] border border-[#2b2733] font-mono transition-colors"
@@ -373,19 +308,6 @@ export const DashboardPage: React.FC = () => {
                       );
                     })}
 
-                    {/* Connect Custom Target Card */}
-                    <div
-                      onClick={() => setCustomTargetModalOpen(true)}
-                      className="rounded-lg p-3 border border-dashed border-[#2f2b38] hover:border-indigo-500/80 bg-[#0a0a0e] hover:bg-[#12121a] transition-all flex flex-col justify-center items-center text-center cursor-pointer min-h-[140px] space-y-2 group"
-                    >
-                      <div className="w-8 h-8 rounded-full bg-indigo-950/60 border border-indigo-700/50 flex items-center justify-center text-indigo-400 group-hover:scale-110 transition-transform text-sm">
-                        🔗
-                      </div>
-                      <div className="text-xs font-bold text-slate-200 group-hover:text-white">Connect Custom URL</div>
-                      <p className="text-[10px] text-slate-500 max-w-[200px]">
-                        Add industry endpoints to test your own product
-                      </p>
-                    </div>
                   </div>
 
                   <div className="pt-2 border-t border-[#1f1b22] flex flex-wrap items-center justify-between gap-4">
@@ -537,13 +459,6 @@ export const DashboardPage: React.FC = () => {
                 </p>
               </div>
               <div className="flex items-center space-x-2">
-                <button
-                  onClick={() => setCustomTargetModalOpen(true)}
-                  className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition-colors flex items-center space-x-1.5 shadow-md shadow-indigo-950/50"
-                >
-                  <span>🔗</span>
-                  <span>Connect Target URL</span>
-                </button>
                 <button
                   onClick={refreshTargets}
                   className="px-3 py-1.5 rounded-lg text-xs font-mono bg-[#16161e] border border-[#2b2733] text-slate-300 hover:text-white transition-colors"
@@ -796,109 +711,6 @@ export const DashboardPage: React.FC = () => {
           }}
         />
 
-        {/* Custom Target Modal (Industry Link Option) */}
-        {customTargetModalOpen && (
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-[#101017] border border-[#23202e] rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-5">
-              <div className="flex items-center justify-between border-b border-[#211e2b] pb-3">
-                <div className="flex items-center space-x-3">
-                  <div className="w-9 h-9 rounded-xl bg-indigo-950/80 border border-indigo-700/60 flex items-center justify-center text-lg">
-                    🔗
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-white uppercase tracking-wider">Connect Custom Target URL</h3>
-                    <p className="text-[11px] text-slate-400">Add an external or industry AI chatbot endpoint for security evaluation</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setCustomTargetModalOpen(false)}
-                  className="w-8 h-8 rounded-lg bg-[#181822] hover:bg-[#252533] text-slate-400 hover:text-white flex items-center justify-center text-sm"
-                >
-                  ✕
-                </button>
-              </div>
-
-              <form onSubmit={handleCreateCustomTarget} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Chatbot Target URL <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="url"
-                    value={customUrl}
-                    onChange={(e) => setCustomUrl(e.target.value)}
-                    placeholder="https://your-chatbot.company.com/chat or http://10.0.0.1:8000"
-                    required
-                    className="w-full bg-[#08080c] border border-[#2b2738] rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 font-mono"
-                  />
-                  <p className="text-[10px] text-slate-500 mt-1">
-                    Must accept HTTP POST requests with conversational message payloads.
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Target Name (Optional)
-                  </label>
-                  <input
-                    type="text"
-                    value={customName}
-                    onChange={(e) => setCustomName(e.target.value)}
-                    placeholder="e.g. Acme Production Assistant"
-                    className="w-full bg-[#08080c] border border-[#2b2738] rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Model / Architecture Identifier
-                  </label>
-                  <input
-                    type="text"
-                    value={customModel}
-                    onChange={(e) => setCustomModel(e.target.value)}
-                    placeholder="e.g. gpt-4o, claude-3-5-sonnet, custom-agent"
-                    className="w-full bg-[#08080c] border border-[#2b2738] rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 font-mono"
-                  />
-                </div>
-
-                {/* Tool Execution and functions */}
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Enterprise Tool Functions (Comma-separated, optional)
-                  </label>
-                  <input
-                    type="text"
-                    value={customToolNames}
-                    onChange={(e) => setCustomToolNames(e.target.value)}
-                    placeholder="e.g. get_invoice, send_email, db_query"
-                    className="w-full bg-[#08080c] border border-[#2b2738] rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 font-mono"
-                  />
-                  <p className="text-[10px] text-slate-500 mt-1">
-                    Declares functions used by the agent for multi-tenant BOLA authorization testing.
-                  </p>
-                </div>
-
-                <div className="pt-3 border-t border-[#211e2b] flex items-center justify-end space-x-2">
-                  <button
-                    type="button"
-                    onClick={() => setCustomTargetModalOpen(false)}
-                    className="px-4 py-2 rounded-xl text-xs font-mono text-slate-400 hover:text-white bg-[#16161f] hover:bg-[#20202c] transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isCreatingTarget || !customUrl.trim()}
-                    className="px-5 py-2 rounded-xl text-xs font-bold tracking-wide uppercase bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white shadow-lg shadow-indigo-950/50 transition-colors flex items-center space-x-2"
-                  >
-                    <span>{isCreatingTarget ? '⏳ Connecting...' : '⚡ Register &amp; Select Target'}</span>
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
       </main>
     </div>
   );

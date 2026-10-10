@@ -24,17 +24,7 @@ export function useTargets() {
     }
   };
 
-  const createTarget = async (target: Omit<Target, 'id'>) => {
-    const result = await api.post<{ id: number }>('/targets', target);
-    await loadTargets();
-    return result;
-  };
-
-  const testConnection = async (baseUrl: string) => {
-    return api.post<{ connected: boolean }>('/targets/test-connection', { base_url: baseUrl });
-  };
-
-  return { targets, loading, error, createTarget, testConnection, refresh: loadTargets };
+  return { targets, loading, error, refresh: loadTargets };
 }
 
 export function useScans() {

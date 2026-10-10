@@ -331,31 +331,25 @@ def test_sidecar_standalone_api_endpoints():
 # =====================================================================
 
 @pytest.mark.asyncio
-async def test_forward_and_observe_mock_http():
+async def test_forward_and_observe_blocks_metadata_destination():
     proxy = ObservationProxy()
     session_id = "sess_fwd_mock"
 
-    mock_resp = AsyncMock()
-    mock_resp.status_code = 200
-    mock_resp.headers = {"content-type": "application/json"}
-    mock_resp.content = b'{"status": "forwarded_ok"}'
+    status, headers, content = await proxy.forward_and_observe(
+        session_id=session_id,
+        method="POST",
+        target_url="http://169.254.169.254/latest/meta-data",
+        content=b'{"prompt": "hello"}',
+        headers={"Authorization": "Bearer supersecret"},
+    )
 
-    with patch("httpx.AsyncClient.request", return_value=mock_resp):
-        status, headers, content = await proxy.forward_and_observe(
-            session_id=session_id,
-            method="POST",
-            target_url="http://external.target/api/chat",
-            content=b'{"prompt": "hello"}',
-            headers={"Authorization": "Bearer supersecret"},
-        )
-
-    assert status == 200
-    assert content == b'{"status": "forwarded_ok"}'
+    assert status == 400
+    assert b"SSRF Blocked" in content
 
     events = proxy.get_session_events(session_id)
     assert len(events) == 1
     assert events[0].headers["Authorization"] == "[REDACTED]"
-    assert events[0].response_json == {"status": "forwarded_ok"}
+    assert events[0].response_json["error"] == "SSRF Blocked"
 
 
 # =====================================================================

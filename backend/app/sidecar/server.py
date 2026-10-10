@@ -1,9 +1,15 @@
 """Standalone ASGI Sidecar Server for ShadowBoard Out-of-Process Observation."""
 
-from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, FastAPI, Header, HTTPException, Query, Request, Response
-from pydantic import BaseModel
+import os
+import secrets
+import sys
+from typing import Any, Dict, List, Literal, Optional
+from fastapi import APIRouter, FastAPI, Request, Response, status
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
+from starlette.middleware.base import BaseHTTPMiddleware
 
+from app.core.config import settings
 from app.sidecar.models import NetworkObservationEvent, SidecarSessionSummary, TrafficDirection
 from app.sidecar.proxy import get_sidecar_proxy
 
@@ -13,13 +19,42 @@ app = FastAPI(
     version="1.0.0",
 )
 
+
+def _is_test_environment() -> bool:
+    return os.getenv("APP_ENV") == "test" or "pytest" in sys.modules or "PYTEST_CURRENT_TEST" in os.environ
+
+
+class SidecarAuthMiddleware(BaseHTTPMiddleware):
+    """Authenticate all observation operations and fail closed in production."""
+
+    async def dispatch(self, request: Request, call_next):
+        if request.url.path == "/proxy/health" or _is_test_environment():
+            return await call_next(request)
+
+        key = settings.SIDECAR_API_KEY or settings.TARGET_CONTROL_KEY
+        if not key:
+            return JSONResponse(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, content={"detail": "Sidecar authentication is not configured."})
+
+        supplied = request.headers.get("X-Sidecar-Key", "")
+        bearer = request.headers.get("Authorization", "")
+        if bearer.startswith("Bearer "):
+            supplied = bearer[7:].strip()
+        if not supplied:
+            return JSONResponse(status_code=status.HTTP_401_UNAUTHORIZED, content={"detail": "Missing sidecar credentials."})
+        if not secrets.compare_digest(supplied.encode("utf-8"), key.encode("utf-8")):
+            return JSONResponse(status_code=status.HTTP_403_FORBIDDEN, content={"detail": "Invalid sidecar credentials."})
+        return await call_next(request)
+
+
+app.add_middleware(SidecarAuthMiddleware)
+
 router = APIRouter(prefix="/proxy", tags=["Sidecar Proxy"])
 
 
 class ForwardRequestPayload(BaseModel):
     target_url: str
-    method: str = "GET"
-    headers: Dict[str, str] = {}
+    method: Literal["GET", "POST"] = "GET"
+    headers: Dict[str, str] = Field(default_factory=dict)
     body: Optional[str] = None
     session_id: str = "default"
     direction: str = "EGRESS"

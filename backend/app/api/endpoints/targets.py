@@ -1,96 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
 import json
 import aiosqlite
-import httpx
-from typing import Optional
-from urllib.parse import urlparse
-from pydantic import BaseModel, HttpUrl
 from app.db.session import get_db
-from app.schemas.target import TargetContract, TargetResponse
-from app.core.ssrf import validate_target_url, safe_http_get_json, SSRFValidationError
+from app.schemas.target import TargetResponse
 
 router = APIRouter(prefix="/targets", tags=["Targets"])
-
-DEFAULT_TARGET = {
-    "name": "Meridian Enterprise Assistant (Reference Target)",
-    "base_url": "http://127.0.0.1:8000/internal-rag",
-    "model_name": "qwen-flash",
-    "target_type": "INTERNAL_RAG",
-    "target_mode": "INSTRUMENTED",
-    "capabilities": {
-        "chat": True,
-        "rag": True,
-        "tools": True,
-        "data_access": True,
-        "tool_names": ["get_invoice", "send_email"]
-    }
-}
-
-class ConnectionCheckRequest(BaseModel):
-    base_url: str
-
-def _is_exact_local_reference(base_url: str) -> bool:
-    parsed = urlparse(base_url)
-    return parsed.hostname in {"127.0.0.1", "localhost"} and parsed.port == 8000 and parsed.path in {"/target-app", "/internal-rag"}
-
-@router.post("/test-connection")
-async def test_connection(request: ConnectionCheckRequest):
-    """Validate a target by reading its real health and contract endpoints with SSRF protections."""
-    is_local_ref = _is_exact_local_reference(request.base_url)
-    try:
-        validated_base = validate_target_url(request.base_url, allow_local=is_local_ref)
-    except SSRFValidationError as exc:
-        raise HTTPException(status_code=400, detail=f"SSRF validation blocked target URL: {exc}")
-
-    try:
-        health_data = await safe_http_get_json(f"{validated_base}/health", allow_local=is_local_ref)
-        contract_data = await safe_http_get_json(f"{validated_base}/contract", allow_local=is_local_ref)
-    except SSRFValidationError as exc:
-        raise HTTPException(status_code=422, detail=f"Target connection or validation failed: {exc}")
-
-    return {"connected": True, "health": health_data, "contract": contract_data}
-
-@router.post("", response_model=TargetResponse)
-async def create_target(target: TargetContract, db: aiosqlite.Connection = Depends(get_db)):
-    # Local reference targets built into ShadowBoard are allowed loopback
-    is_local_ref = _is_exact_local_reference(target.base_url)
-    try:
-        validated_base = validate_target_url(target.base_url, allow_local=is_local_ref)
-    except SSRFValidationError as exc:
-        raise HTTPException(status_code=400, detail=f"SSRF validation blocked target URL: {exc}")
-
-    # Authoritative capability discovery: probe target's /contract if reachable
-    capabilities_dict = target.capabilities.model_dump()
-    try:
-        contract_data = await safe_http_get_json(f"{validated_base}/contract", allow_local=is_local_ref)
-        if isinstance(contract_data, dict) and "capabilities" in contract_data:
-            observed_caps = contract_data["capabilities"]
-            if isinstance(observed_caps, dict):
-                capabilities_dict = observed_caps
-    except Exception:
-        pass
-
-    cursor = await db.execute(
-        "INSERT INTO targets (name, base_url, model_name, target_type, target_mode, capabilities_json) VALUES (?, ?, ?, ?, ?, ?)",
-        (target.name, validated_base, target.model_name, target.target_type, target.target_mode, json.dumps(capabilities_dict))
-    )
-    target_id = cursor.lastrowid
-    from app.api.endpoints.policies import default_policy_for_target_type
-    policy_data = default_policy_for_target_type(target.target_type)
-    await db.execute(
-        "INSERT INTO policies (target_id, policy_json, taxonomy, taxonomy_version) VALUES (?, ?, ?, ?)",
-        (target_id, json.dumps(policy_data), "OWASP", "2025")
-    )
-    await db.commit()
-    return TargetResponse(
-        id=target_id,
-        name=target.name,
-        base_url=validated_base,
-        model_name=target.model_name,
-        target_type=target.target_type,
-        target_mode=target.target_mode,
-        capabilities=target.capabilities
-    )
 
 @router.get("", response_model=list[TargetResponse])
 async def list_targets(db: aiosqlite.Connection = Depends(get_db)):

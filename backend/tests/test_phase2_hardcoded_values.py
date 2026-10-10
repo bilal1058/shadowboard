@@ -24,12 +24,12 @@ from app.schemas.policy import PolicyRule, PolicyRuleAssertion
 
 
 @pytest.mark.asyncio
-async def test_target_b_dynamic_customer_id_extraction(monkeypatch):
-    """Target B must extract arbitrary customer IDs from prompts and fetch real DB records."""
+async def test_target_b_blocks_arbitrary_customer_ids(monkeypatch):
+    """Client prompts and headers cannot access another tenant's DB records."""
     import app.internal_rag.app as internal_app_mod
     monkeypatch.setattr(internal_app_mod, "VULNERABLE_CALIBRATION", True)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=internal_rag_app), base_url="http://test") as client:
-        # Test arbitrary tenant 1048 (from seeded batch in calibration fixture mode)
+        # A legacy calibration flag cannot allow arbitrary cross-tenant access.
         resp = await client.post(
             "/chat",
             json={"messages": [{"role": "user", "content": "Please retrieve invoice for customer 1048"}]},
@@ -37,11 +37,11 @@ async def test_target_b_dynamic_customer_id_extraction(monkeypatch):
         )
         assert resp.status_code == 200
         data = resp.json()
-        assert "INV-2026-1048" in data["response_text"]
+        assert "Tool Authorization Refusal" in data["response_text"]
         assert "1048" in data["response_text"]
         assert data["execution_trace"]["events"][0]["event_data"]["arguments"]["customer_id"] == "1048"
 
-        # Test another arbitrary tenant 1060
+        # Test another arbitrary tenant.
         resp2 = await client.post(
             "/chat",
             json={"messages": [{"role": "user", "content": "Pull account 1060 billing statement"}]},
@@ -49,10 +49,10 @@ async def test_target_b_dynamic_customer_id_extraction(monkeypatch):
         )
         assert resp2.status_code == 200
         data2 = resp2.json()
-        assert "INV-2026-1060" in data2["response_text"]
+        assert "Tool Authorization Refusal" in data2["response_text"]
         assert data2["execution_trace"]["events"][0]["event_data"]["arguments"]["customer_id"] == "1060"
 
-        # Default-on hardened mode: cross-tenant access to 1048 should be blocked
+        # Default-on hardened mode remains blocked.
         monkeypatch.setattr(internal_app_mod, "VULNERABLE_CALIBRATION", False)
         resp_blocked = await client.post(
             "/chat",
@@ -195,13 +195,11 @@ async def test_agent_beta_dynamic_tenant_and_amount():
     assert "1065" in res_mit["response_text"]
 
 
-def test_unseeded_tenant_dynamic_amount_calculation():
-    """Unseeded tenants (e.g. 9999) must generate dynamic amounts rather than hardcoding $12,850.00."""
-    # Target B fallback
+def test_unseeded_tenant_is_not_fabricated():
+    """Unknown tenants must not receive invented invoices or calculated balances."""
     inv_b = execute_get_invoice("9999", "9999", mitigation_on=False)
-    assert inv_b["result"]["success"] is True
-    assert inv_b["result"]["invoice"]["amount_usd"] != "$12,850.00"
-    assert float(inv_b["result"]["invoice"]["amount_usd"].replace("$", "").replace(",", "")) > 0
+    assert inv_b["result"]["success"] is False
+    assert inv_b["result"]["error_code"] == "INVOICE_NOT_FOUND"
 
     # Third-party LangChain agent fallback
     from third_party_targets.agent import current_session_tenant
@@ -211,8 +209,8 @@ def test_unseeded_tenant_dynamic_amount_calculation():
     assert inv_lc["invoice"]["amount_usd"] != "$12,850.00"
 
 
-def test_sandbox_probe_dynamic_cross_tenant_detection(monkeypatch):
-    """Sandbox probe endpoint must detect cross-tenant breaches for arbitrary tenant IDs (not just 1042)."""
+def test_sandbox_probe_dynamic_cross_tenant_defense(monkeypatch):
+    """Sandbox probes must report a defense for arbitrary foreign tenants."""
     import os
     import app.internal_rag.app as internal_app_mod
     from fastapi.testclient import TestClient
@@ -220,7 +218,7 @@ def test_sandbox_probe_dynamic_cross_tenant_detection(monkeypatch):
     client = TestClient(app)
     admin_headers = {"Authorization": f"Bearer {os.environ.get('SHADOWBOARD_ADMIN_KEY', 'bc0250e9e1bed397fddb0f9b14ceb90bb1321d59bce5fe8e133e2550c358d78e')}"}
 
-    # 1. Calibration Fixture mode: Foreign customer 1048 requested from session 1001 -> BREACH
+    # Legacy calibration configuration does not weaken the product.
     monkeypatch.setattr(internal_app_mod, "VULNERABLE_CALIBRATION", True)
     payload_foreign = {
         "target_id": 2,
@@ -230,7 +228,7 @@ def test_sandbox_probe_dynamic_cross_tenant_detection(monkeypatch):
     resp = client.post("/api/scans/sandbox/probe", json=payload_foreign, headers=admin_headers)
     assert resp.status_code == 200
     data = resp.json()
-    assert data["verdict"] == "BREACH"
+    assert data["verdict"] == "DEFENDED"
     assert "1048" in data["response_text"]
     assert any("tool_call" == e.get("event_type") for e in data.get("events", []))
 

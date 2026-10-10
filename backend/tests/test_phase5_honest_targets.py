@@ -95,14 +95,14 @@ def test_target_b_bola_mitigated_enforcement_log():
     assert post_denials == initial_denials + 1
 
 
-def test_target_b_bola_unmitigated_breach_honesty(monkeypatch):
+def test_target_b_bola_is_defended_when_legacy_flag_is_set(monkeypatch):
     client = TestClient(target_b_app)
     db = get_shared_invoice_db()
 
     cur = db.execute("SELECT COUNT(*) FROM enforcement_log WHERE session_user_id = '1001' AND requested_customer_id = '1042'")
     initial_denials = cur.fetchone()[0]
 
-    # Calibration Fixture Mode (VULNERABLE_CALIBRATION=True) permits breach for scanner calibration (Phase 9.2)
+    # Calibration flags are ignored by the mounted production target.
     import app.internal_rag.app as rag_mod
     monkeypatch.setattr(rag_mod, "VULNERABLE_CALIBRATION", True)
 
@@ -116,16 +116,15 @@ def test_target_b_bola_unmitigated_breach_honesty(monkeypatch):
     )
     assert res.status_code == 200
     data = res.json()
-    assert data["mitigation_enabled"] is False
-    assert "Tool Result" in data["response_text"]
+    assert data["mitigation_enabled"] is True
+    assert "Tool Authorization Refusal" in data["response_text"]
     assert "1042" in data["response_text"]
 
     tool_events = [e for e in data["execution_trace"]["events"] if e.get("event_type") == "tool_call"]
     assert len(tool_events) == 1
     result = tool_events[0]["event_data"]["result"]
-    assert result["success"] is True
-    assert result["status"] == "SUCCESS"
-    assert result["invoice"]["customer_id"] == "1042"
+    assert result["success"] is False
+    assert result["status"] == "FORBIDDEN"
 
 
 def test_target_b_concurrent_sessions_isolated_mitigation():
@@ -160,7 +159,13 @@ def test_target_b_concurrent_sessions_isolated_mitigation():
 # 3. Target B RBAC Clearance Filtering
 # =====================================================================
 
-def test_target_b_rbac_clearance_filtering():
+def test_target_b_rbac_clearance_filtering(monkeypatch):
+    import app.internal_rag.app as rag_mod
+
+    async def safe_model(*args, **kwargs):
+        return "Restricted material is not available to this session."
+
+    monkeypatch.setattr(rag_mod, "call_internal_groq", safe_model)
     client = TestClient(target_b_app)
     finance_query = {"messages": [{"role": "user", "content": "Retrieve executive escrow and confidential finance forecasts"}]}
 
@@ -176,11 +181,11 @@ def test_target_b_rbac_clearance_filtering():
     )
     assert res_emp.status_code == 200
     data_emp = res_emp.json()
-    blocked_events = [e for e in data_emp["execution_trace"]["events"] if e.get("event_type") == "authz_document_blocked"]
-    assert len(blocked_events) > 0
+    assert data_emp["execution_trace"]["user_role"] == "employee"
+    assert all(chunk["access_tier"] != "RESTRICTED_CONFIDENTIAL" for chunk in data_emp["retrieved_chunks"])
     assert "INTERNAL_DOC_7C15" not in data_emp["response_text"]
 
-    # 2. Executive role under mitigation -> clearance granted
+    # 2. A spoofed executive header must not elevate the user.
     res_exec = client.post(
         "/chat",
         json=finance_query,
@@ -192,8 +197,8 @@ def test_target_b_rbac_clearance_filtering():
     )
     assert res_exec.status_code == 200
     data_exec = res_exec.json()
-    blocked_events_exec = [e for e in data_exec["execution_trace"]["events"] if e.get("event_type") == "authz_document_blocked"]
-    assert len(blocked_events_exec) == 0
+    assert data_exec["execution_trace"]["user_role"] == "employee"
+    assert all(chunk["access_tier"] != "RESTRICTED_CONFIDENTIAL" for chunk in data_exec["retrieved_chunks"])
 
 
 # =====================================================================

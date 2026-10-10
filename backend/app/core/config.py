@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     SHADOWBOARD_API_KEY: Optional[str] = None
     ADMIN_SESSION_TTL_SECONDS: int = Field(default=1800, ge=300, le=28800)
     TARGET_CONTROL_KEY: Optional[str] = None
+    SIDECAR_API_KEY: Optional[str] = None
 
     # Model providers
     TARGET_MODEL: str = "qwen-flash"

@@ -141,8 +141,8 @@ async def test_real_llm_tool_agent_groq():
         )
         assert outcome_mit.target_breached is False
     except Exception as exc:
-        if "rate limit" in str(exc).lower() or "429" in str(exc).lower():
-            pytest.skip(f"Groq API rate limit reached: {exc}")
+        if any(marker in str(exc).lower() for marker in ("rate limit", "429", "connection error", "connecterror")):
+            pytest.skip(f"Groq provider is unavailable from this environment: {exc}")
         raise
 
 

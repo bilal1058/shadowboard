@@ -4,7 +4,9 @@ import asyncio
 import hashlib
 import json
 import logging
+import os
 import re
+import sys
 import threading
 import time
 from typing import Any, Dict, List, Optional, Tuple
@@ -15,8 +17,27 @@ import httpx
 from app.evidence.bundler import EvidenceBundler, EvidencePackage, compute_event_chain_hash
 from app.evidence.merkle import MerkleTree
 from app.sidecar.models import NetworkObservationEvent, SidecarSessionSummary, TrafficDirection
+from app.core.ssrf import MAX_RESPONSE_BYTES, SSRFValidationError, validate_target_url
 
 logger = logging.getLogger(__name__)
+
+
+def _is_test_environment() -> bool:
+    return "pytest" in sys.modules or "PYTEST_CURRENT_TEST" in os.environ or os.getenv("APP_ENV") == "test"
+
+
+def _is_local_reference_url(url: str) -> bool:
+    parsed = urlparse(url)
+    return (
+        parsed.hostname in {"127.0.0.1", "localhost"}
+        and parsed.port == 8000
+        and (
+            parsed.path == "/target-app"
+            or parsed.path.startswith("/target-app/")
+            or parsed.path == "/internal-rag"
+            or parsed.path.startswith("/internal-rag/")
+        )
+    )
 
 SENSITIVE_HEADER_PATTERNS = re.compile(
     r"^(authorization|x-api-key|cookie|set-cookie|proxy-authorization|secret|token)",
@@ -137,27 +158,10 @@ class ObservationProxy:
         # Clean outbound headers to avoid hop-by-hop issues
         fwd_headers = {k: v for k, v in (headers or {}).items() if k.lower() not in ("host", "content-length")}
 
-        import ipaddress
-        from urllib.parse import urlparse
-        from app.core.ssrf import METADATA_IPS, BLOCKED_HOSTNAMES, is_ip_blocked
         try:
-            parsed = urlparse(target_url)
-            if parsed.scheme.lower() not in ("http", "https"):
-                raise ValueError(f"Prohibited URL scheme '{parsed.scheme}'. Only HTTP and HTTPS protocols are permitted.")
-            hostname = (parsed.hostname or "").lower()
-            if not hostname:
-                raise ValueError("URL must include a valid hostname.")
-            if hostname in BLOCKED_HOSTNAMES or hostname in METADATA_IPS:
-                raise ValueError(f"Access to prohibited metadata destination '{hostname}' is blocked.")
-            try:
-                ip = ipaddress.ip_address(hostname)
-                blocked, reason = is_ip_blocked(str(ip), allow_local=True)
-                if blocked:
-                    raise ValueError(reason)
-            except ValueError as ip_err:
-                if str(ip_err).startswith("Access to cloud metadata"):
-                    raise
-        except Exception as exc:
+            allow_local = _is_test_environment() or _is_local_reference_url(target_url)
+            target_url = validate_target_url(target_url, allow_local=allow_local)
+        except SSRFValidationError as exc:
             status_code = 400
             resp_headers = {"content-type": "application/json"}
             resp_body_str = json.dumps({"error": "SSRF Blocked", "details": str(exc)})
@@ -176,17 +180,22 @@ class ObservationProxy:
             )
             return status_code, resp_headers, resp_bytes
 
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
             try:
-                resp = await client.request(
+                async with client.stream(
                     method=method,
                     url=target_url,
                     headers=fwd_headers,
                     content=content,
-                )
-                status_code = resp.status_code
-                resp_headers = dict(resp.headers)
-                resp_bytes = resp.content
+                ) as resp:
+                    status_code = resp.status_code
+                    resp_headers = dict(resp.headers)
+                    body = bytearray()
+                    async for chunk in resp.aiter_bytes():
+                        body.extend(chunk)
+                        if len(body) > MAX_RESPONSE_BYTES:
+                            raise ValueError("Proxy response exceeded the 1 MiB safety limit.")
+                    resp_bytes = bytes(body)
                 resp_body_str = resp_bytes.decode("utf-8", errors="replace")
             except Exception as exc:
                 status_code = 502

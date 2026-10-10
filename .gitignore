@@ -107,3 +107,7 @@ build/
 
 # Cloudflare Security Audit Artifacts
 security-audit/
+
+# Presentation Scratch
+.frontend-slides/
+

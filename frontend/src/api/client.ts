@@ -102,7 +102,8 @@ export class ApiClient {
     });
     if (!response.ok) throw new Error('Administrative authentication failed.');
     this.hasActiveSession = true;
-    this.inMemoryKey = key;
+    // The cookie is now the credential. Do not retain the master key in page memory.
+    this.inMemoryKey = null;
   }
 
   async destroyBrowserSession(): Promise<void> {
