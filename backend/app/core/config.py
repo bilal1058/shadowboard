@@ -6,8 +6,8 @@ from pydantic_settings import BaseSettings
 from pydantic import Field, field_validator
 from typing import Optional, List
 
-# Search and load environment variables into os.environ (outside pytest)
-_is_test = "pytest" in sys.modules or os.getenv("APP_ENV") == "test" or "PYTEST_CURRENT_TEST" in os.environ
+# Search and load environment variables into os.environ (outside test mode)
+_is_test = os.getenv("APP_ENV") == "test" or os.getenv("TESTING") == "1"
 if not _is_test:
     _root_dir = Path(__file__).resolve().parent.parent.parent.parent
     _backend_dir = Path(__file__).resolve().parent.parent.parent
@@ -91,7 +91,7 @@ class Settings(BaseSettings):
         return origins
 
     model_config = {
-        "env_file": None if ("pytest" in sys.modules or os.getenv("APP_ENV") == "test" or "PYTEST_CURRENT_TEST" in os.environ) else (".env" if os.path.exists(".env") else ("backend/.env" if os.path.exists("backend/.env") else None)),
+        "env_file": None if (os.getenv("APP_ENV") == "test" or os.getenv("TESTING") == "1") else (".env" if os.path.exists(".env") else ("backend/.env" if os.path.exists("backend/.env") else None)),
         "env_file_encoding": "utf-8",
         "case_sensitive": True,
         "extra": "ignore",

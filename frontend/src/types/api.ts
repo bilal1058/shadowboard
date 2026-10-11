@@ -106,3 +106,65 @@ export interface EvidencePackage {
   remediation: string;
   verified: boolean;
 }
+
+export interface CausalNode {
+  node_id: string;
+  label: string;
+  type: string;
+  timestamp: number;
+  trust_level: string;
+  evidence_snippet: string;
+  details: Record<string, any>;
+}
+
+export interface CausalEdge {
+  source: string;
+  target: string;
+  relationship: string;
+  link_type: string;
+  uncertainty_score: number;
+  correlation_method: string;
+}
+
+export interface CausalGraphData {
+  finding_id: string;
+  rule_id: string;
+  severity: string;
+  nodes: CausalNode[];
+  edges: CausalEdge[];
+  developer_summary: Record<string, string>;
+  non_expert_explanation: string;
+  remediation_guidance: string;
+  mermaid_diagram: string;
+}
+
+export interface DifferentialAuthCaseResult {
+  case_id: string;
+  description: string;
+  invariant_category: string;
+  caller: string;
+  role: string;
+  target_owner: string;
+  action_type: string;
+  tool_name: string;
+  expected_outcome: string;
+  actual_outcome: string;
+  passed: boolean;
+  discrepancy_details: string;
+  response_snippet: string;
+}
+
+export interface DifferentialAuthResponse {
+  total_cases: number;
+  passed_cases: number;
+  violations_detected: number;
+  enforce_mitigation: boolean;
+  results: DifferentialAuthCaseResult[];
+}
+
+export interface TargetContractInfo {
+  target_mode: string;
+  schema_version: string;
+  supported_event_types: string[];
+  trace_format: string;
+}

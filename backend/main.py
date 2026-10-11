@@ -58,9 +58,16 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("Database initialized")
 
-    # Register reference targets
+    # Clean up any orphaned scans from prior interrupted runs
     import aiosqlite
     from app.db.session import DB_PATH
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE scan_runs SET status = 'CANCELLED', completed_at = CURRENT_TIMESTAMP WHERE status IN ('RUNNING', 'QUEUED')"
+        )
+        await db.commit()
+
+    # Register reference targets
     async with aiosqlite.connect(DB_PATH) as db:
         try:
             from app.api.endpoints.policies import default_policy_for_target_type
@@ -208,9 +215,14 @@ if os.path.exists(assets_dir):
 if os.path.exists(frontend_static_dir):
     app.mount("/static", StaticFiles(directory=frontend_static_dir), name="static")
 
+# Mount presentation directory for browser viewing
+presentation_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "presentation")
+if os.path.exists(presentation_dir):
+    app.mount("/presentation", StaticFiles(directory=presentation_dir, html=True), name="presentation")
+
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
-    svg_icon = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#dc2626"><path d="M12 2L3 7v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-9-5zm0 2.18l7 3.89v4.93c0 4.54-3.14 8.79-7 9.94-3.86-1.15-7-5.4-7-9.94V8.07l7-3.89z"/></svg>"""
+    svg_icon = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#f97316"><path d="M12 2L3 7v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-9-5zm0 2.18l7 3.89v4.93c0 4.54-3.14 8.79-7 9.94-3.86-1.15-7-5.4-7-9.94V8.07l7-3.89z"/></svg>"""
     return Response(content=svg_icon, media_type="image/svg+xml")
 
 @app.get("/{full_path:path}", include_in_schema=False)
@@ -220,6 +232,11 @@ async def serve_spa(full_path: str = ""):
         return RedirectResponse(url="/internal-rag/", status_code=307)
     if clean == "target-app":
         return RedirectResponse(url="/target-app/", status_code=307)
+    if clean == "presentation" or clean.startswith("presentation/"):
+        pres_sub = clean[len("presentation"):].lstrip("/")
+        pres_target = os.path.join(presentation_dir, pres_sub if pres_sub else "index.html")
+        if os.path.exists(pres_target):
+            return FileResponse(pres_target)
     if full_path.startswith("api/") or full_path == "api":
         raise HTTPException(status_code=404, detail="API endpoint not found")
     # If a specific static file exists directly in frontend_static_dir, serve it

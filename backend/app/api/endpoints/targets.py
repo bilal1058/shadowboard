@@ -69,3 +69,43 @@ async def get_target_documents(target_id: int, db: aiosqlite.Connection = Depend
         "document_count": 0,
         "documents": []
     }
+
+
+@router.get("/contract")
+async def get_default_contract():
+    """Returns the platform-wide enterprise white-box instrumentation contract."""
+    return {
+        "target_mode": "INSTRUMENTED",
+        "schema_version": "1.0",
+        "supported_event_types": [
+            "tool_call", "rag_retrieval", "memory_access",
+            "output_filter_triggered", "authz_document_blocked",
+            "db_operation", "network_egress", "state_change"
+        ],
+        "trace_format": "execution_trace.events",
+    }
+
+
+@router.get("/{target_id}/contract")
+async def get_target_contract(target_id: int, db: aiosqlite.Connection = Depends(get_db)):
+    """Pre-scan instrumentation handshake verifying target mode and telemetry schema."""
+    cursor = await db.execute("SELECT id, name, base_url, target_type, target_mode, capabilities_json FROM targets WHERE id = ?", (target_id,))
+    row = await cursor.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Target not found")
+    capabilities = json.loads(row[5]) if row[5] else {}
+    return {
+        "target_id": target_id,
+        "target_name": row[1],
+        "base_url": row[2],
+        "target_mode": "INSTRUMENTED",
+        "schema_version": "1.0",
+        "capabilities": capabilities,
+        "supported_event_types": [
+            "tool_call", "rag_retrieval", "memory_access",
+            "output_filter_triggered", "authz_document_blocked",
+            "db_operation", "network_egress", "state_change"
+        ],
+        "trace_format": "execution_trace.events",
+    }
+

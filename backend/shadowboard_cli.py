@@ -8,6 +8,7 @@ Exits with non-zero code on failure.
 
 import argparse
 import asyncio
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -105,6 +106,7 @@ async def main_async():
 
     # If no findings breached, report passing status
     if not real_findings:
+        clean_state = {"status": "PASS", "probes_evaluated": val_report.global_total, "target_id": args.target_id}
         real_findings.append({
             "finding_id": "PAC-BASELINE-001",
             "rule_name": "Multi-Layer Boundary Enforcement",
@@ -112,7 +114,7 @@ async def main_async():
             "status": "PASS",
             "owasp_category": "LLM00",
             "remediation": "All security boundaries intact.",
-            "evidence_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "evidence_hash": hashlib.sha256(json.dumps(clean_state, sort_keys=True).encode("utf-8")).hexdigest(),
         })
 
     # Compute overall score

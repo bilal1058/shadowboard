@@ -112,9 +112,16 @@ class StandaloneVerifier:
         # -------------------------------------------------------------
         effective_mode = "TRUSTED_SIGNER" if enforce_active_key else mode
         registry = key_registry or (get_active_key_registry() if effective_mode in ("TRUSTED_SIGNER", "HISTORICAL_SIGNER") else None)
+        is_unsigned = proof.get("signature_status") == "UNSIGNED" or (not sig_ed25519_hex and not pubkey_hex)
         key_record = registry.get_key(key_id) if registry is not None else None
 
         if effective_mode == "TRUSTED_SIGNER":
+            if is_unsigned:
+                return False, "Authenticity Failure: Evidence package is UNSIGNED and lacks a verified digital signature.", {
+                    "verification_status": "UNSIGNED",
+                    "key_id": key_id,
+                    "authenticity_status": "UNSIGNED",
+                }
             if not key_record:
                 return False, f"Authenticity Failure: Signing key '{key_id}' is not registered in trusted key registry!", {
                     "verification_status": "KEY_NOT_REGISTERED",
@@ -195,14 +202,14 @@ class StandaloneVerifier:
             "rule_id": pkg_data.get("rule_id"),
             "severity": pkg_data.get("severity"),
             "events_verified": len(events),
-            "verification_status": "CRYPTOGRAPHICALLY_VERIFIED",
+            "verification_status": "CRYPTOGRAPHICALLY_VERIFIED" if sig_ed25519_hex else "INTEGRITY_VERIFIED_UNSIGNED",
             "integrity_status": "SHA256_MERKLE_CHAIN_VERIFIED",
             "merkle_tree_status": "BINARY_TREE_VERIFIED" if claimed_merkle_root else "NONE",
-            "authenticity_status": "ED25519_SIGNATURE_VERIFIED" if sig_ed25519_hex else "HASH_INTEGRITY_ONLY",
+            "authenticity_status": "ED25519_SIGNATURE_VERIFIED" if sig_ed25519_hex else ("UNSIGNED" if is_unsigned else "HASH_INTEGRITY_ONLY"),
             "substrate_truth_level": substrate_truth,
             "signer_public_key": pubkey_hex or "NONE",
             "key_id": key_id,
-            "key_status": key_record.status if key_record else ("UNVALIDATED_REGISTRY" if effective_mode == "CRYPTOGRAPHIC_ONLY" else "UNKNOWN"),
+            "key_status": key_record.status if key_record else ("UNSIGNED" if is_unsigned else ("UNVALIDATED_REGISTRY" if effective_mode == "CRYPTOGRAPHIC_ONLY" else "UNKNOWN")),
             "merkle_root": claimed_merkle_root or "N/A",
         }
         return True, "Evidence package integrity and Ed25519 signature verified successfully. No tampering detected.", summary

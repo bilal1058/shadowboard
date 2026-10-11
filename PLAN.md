@@ -70,7 +70,11 @@
 | **5** | Honest Targets & Session-Isolated Mitigation | **GREEN / COMPLETED** | `pytest backend/tests -v` | 146 passed, 1 skipped, 0 failed in 7.66s (10/10 Phase 5 tests passed) | `4426e4b` |
 | **6** | Statistical & Documentation Honesty | **GREEN / COMPLETED** | `pytest backend/tests -v` | 154 passed, 1 skipped, 0 failed in 11.20s (8/8 Phase 6 tests passed) | `ab5b308` |
 | **7** | Permanent CI Regression Enforcement Suite | **GREEN / COMPLETED** | `pytest backend/tests -v` & `python scripts/ci_enforcement_audit.py` | 177 passed, 1 skipped, 0 failed in 8.67s; 23/23 CI invariant tests passed; Standalone audit passed (7/7 checks) | `926a538` |
-| **8** | (Optional) Out-of-Process Observation Sidecar | **GREEN / COMPLETED** | `pytest backend/tests/test_phase8_observation_sidecar.py -v` | 185 passed, 1 skipped, 0 failed in 9.86s (8/8 Phase 8 tests passed); Standalone L2 sidecar verified | `d481471` |
+| **8** | Out-of-Process Observation Sidecar | **GREEN / COMPLETED** | `pytest backend/tests/test_phase8_observation_sidecar.py -v` | 185 passed, 1 skipped, 0 failed in 9.86s (8/8 Phase 8 tests passed); Standalone L2 sidecar verified | `d481471` |
+| **9** | Real Target Onboarding & Browser Testing | **GREEN / COMPLETED** | `pytest backend/tests/test_browser_onboarding.py -v` | 11 passed in 10.42s; Playwright Chromium automated launcher & iframe discovery | `working` |
+| **10** | Multi-Tool Reference Agent (11 Tools) | **GREEN / COMPLETED** | `pytest backend/tests/test_reference_agent_and_diff_auth.py -v` | 12 passed in 0.35s; 11 enterprise tools with real invariants and authorization gates | `working` |
+| **11** | Differential Authorization Matrix Engine | **GREEN / COMPLETED** | `pytest backend/tests/test_reference_agent_and_diff_auth.py -v` | 12 passed; Identity x Role x Resource x Action systematic verification | `working` |
+| **12** | Causal Attack Graphs, Replay, Diff & Unsigned PKI | **GREEN / COMPLETED** | `pytest backend/tests/test_causal_replay_and_diff.py -v` | 5 passed; Evidence DAGs, curl reproduction commands, fix verification, unsigned PKI | `working` |
 
 ---
 
@@ -415,7 +419,114 @@ Following an independent code-level audit of the actual codebase, all identified
   - `python scripts/ci_enforcement_audit.py`: **7/7 PASS**.
   - `pytest backend/tests/test_phase8_observation_sidecar.py -v`: **9/9 PASS**.
   - `pytest backend/tests/test_phase7_permanent_ci_suite.py -v`: **23/23 PASS**.
-  - Full suite `pytest backend/tests`: **186 passed, 1 skipped, 0 failed in 9.21s**.
+  - Baseline post-Phase 8 test suite: **186 passed, 1 skipped, 0 failed in 9.21s**.
+
+---
+
+## 14. Phase 9: Real Target Onboarding & Controlled Browser Testing
+
+- [x] **14.1 Target Scope Enforcement Engine (`backend/app/browser/scope.py`)**:
+  - Implemented `ScopeEnforcer` with domain and origin allowlists.
+  - Bounded request budgets and rate limiting (tokens/minute).
+  - Emergency stop control (`emergency_stop()`) immediately halting active testing.
+  - Automatic redaction of credentials, bearer tokens, passwords, and sensitive cookies.
+  - Tested in `backend/tests/test_browser_onboarding.py`.
+- [x] **14.2 Browser Chatbot Adapter with Playwright Chromium (`backend/app/browser/adapter.py`)**:
+  - Real headless browser automation via Playwright Chromium.
+  - Robust semantic discovery: accessible roles (`button[name*="chat"]`), ARIA labels, floating launchers, SVG chat icons, and iframes.
+  - Interactive element verification: input fields, send buttons, and conversation containers.
+  - Safe baseline interaction sending harmless test greetings and recording visible replies.
+  - Diagnostic artifacts: sanitized DOM snapshots and screenshots for operator verification.
+- [x] **14.3 Target Onboarding API Endpoints (`backend/app/api/endpoints/onboarding.py`)**:
+  - `POST /api/onboarding/discover`: initiates browser or HTTP discovery and returns structured profile.
+  - `POST /api/onboarding/confirm`: saves operator-validated profile and scope constraints.
+  - `GET /api/onboarding/templates`: provides recommended test profiles (Black-box, Authenticated, Instrumented).
+  - Registered in `backend/app/api/router.py`.
+- [x] **14.4 Test Verification**:
+  - `backend/tests/test_browser_onboarding.py`: **11/11 PASS** (including real Chromium widget and iframe automation).
+
+---
+
+## 15. Phase 10: Multi-Tool Enterprise Reference Agent
+
+- [x] **15.1 11 Real Enterprise Agent Tools (`backend/app/reference_agent/tools.py`)**:
+  - Implemented 11 functional tools with strict Pydantic schemas, input validation, and ownership rules:
+    1. `get_profile`: reads authenticated user profile.
+    2. `update_profile_field`: modifies permitted user fields (rejects role mutations).
+    3. `search_documents`: retrieves documents partitioned by tenant ownership.
+    4. `get_invoice`: fetches invoices with strict tenant ownership checks.
+    5. `create_support_ticket`: creates tickets bound to session user.
+    6. `query_database_analytics`: runs read-only tenant-scoped aggregations.
+    7. `get_order_status`: queries customer order records.
+    8. `create_draft_record`: prepares draft items.
+    9. `call_mock_external_service`: calls isolated external mock API.
+    10. `send_notification`: dispatches simulated alerts.
+    11. `query_account_balance`: retrieves financial balances.
+  - Enforced structured audit logs for every invocation with parameter tracking.
+- [x] **15.2 Reference Agent Postures (`backend/app/reference_agent/agent.py`)**:
+  - `MultiToolReferenceAgent` supporting both `vulnerable` (flawed authorization) and `mitigated` (strict server-side checks) execution.
+  - Proves 14 vulnerability classes: BOLA, excessive tools, argument manipulation, privilege escalation, cross-tenant leaks.
+
+---
+
+## 16. Phase 11: Differential Authorization Testing Matrix
+
+- [x] **16.1 Differential Matrix Generator (`backend/app/differential_auth/matrix.py`)**:
+  - `DifferentialAuthMatrix` systematically varying Identity x Role x Resource x Action.
+  - Invariant rules:
+    - User A reading User A resource: `EXPECT_ALLOWED`.
+    - User A reading User B resource: `EXPECT_DENIED` (BOLA).
+    - User A modifying User B resource: `EXPECT_DENIED` (IDOR).
+    - Read-only user writing: `EXPECT_DENIED` (Broken Function-Level Auth).
+    - Standard user claiming admin: `EXPECT_DENIED` (Privilege Escalation).
+    - Cross-tenant document query: `EXPECT_DENIED` (Tenant Isolation).
+  - Ground truth established from test policy, not self-reported target flags.
+- [x] **16.2 Test Verification**:
+  - `backend/tests/test_reference_agent_and_diff_auth.py`: **12/12 PASS**.
+
+---
+
+## 17. Phase 12: Causal Attack Graphs, Evidence Replay, Regression Diff, & Unsigned PKI
+
+- [x] **17.1 Causal Attack Graph Engine (`backend/app/causal/graph.py`)**:
+  - `CausalGraphBuilder` constructs evidence-linked DAGs with strict classification:
+    - `DIRECTLY_OBSERVED`: wire events, responses, executed tool traces.
+    - `CORRELATED`: temporally linked events within same session.
+    - `INFERRED`: behavioral hypotheses.
+  - Directly answers the 7 developer questions.
+  - Renders interactive Mermaid diagrams.
+- [x] **17.2 Evidence Replay Engine (`backend/app/evidence/replay.py`)**:
+  - Generates reproducible `curl` reproduction commands from sanitized evidence bundles.
+  - Executes replay attacks against target instances and independently determines if vulnerability is patched or still active.
+- [x] **17.3 Security Regression Diff Engine (`backend/app/regression/diff.py`)**:
+  - `RegressionDiffEngine` compares baseline vs post-patch scan results.
+  - Enforces mandatory honesty rule: disappearing finding is classified as `UNVERIFIED_MISSING` unless explicitly re-tested and confirmed prevented (`VERIFIED_FIXED`).
+  - Flags `NEW_VULNERABILITY` and `RECURRENT_REGRESSION` for CI gating.
+- [x] **17.4 Cryptographic Unsigned Mode & Sensitive Value Assembly**:
+  - Added `unsigned=True` mode in `EvidenceBundler.create_package` (`signature_status: "UNSIGNED"`).
+  - Updated `StandaloneVerifier.verify_package` to strictly reject unsigned evidence in `TRUSTED_SIGNER` mode while allowing hash integrity verification in `CRYPTOGRAPHIC_ONLY` mode.
+  - Updated `SensitiveValueSet` and `_SECRET_MARKER_RE` to match structural secrets regardless of casing.
+  - Synchronized `IndependentOracle` prompt extraction to detect configured `forbidden_tokens` and `directives`.
+- [x] **17.5 Full Platform Verification**:
+  - `pytest backend/tests`: **258 passed, 0 failed in 30.13s** across 36 test files (including Stage 1 baseline restoration and Stage 2 platform security hardening).
+  - `python scripts/ci_enforcement_audit.py`: **7/7 PASS**.
+  - `npm run build` in `frontend/`: **clean build in 9.17s**.
+  - `backend/requirements.txt`: pinned `playwright==1.61.0`.
+  - `strix_runs/`: unneeded execution logs removed.
+- [x] **17.6 Stage 3 Endpoint Wire-in & Ground Truth Unification**:
+  - Target onboarding SQLite persistence: `POST /api/onboarding/confirm` stores confirmed target profiles in `targets` table, immediately visible in `GET /api/targets`.
+  - Causal attack graphs API: `POST /api/causal/graph` and `GET /api/causal/graph/demo` backed by `CausalGraphBuilder` with `build_from_finding`, answering the 7 developer questions and generating Mermaid flowchart markup.
+  - Differential authorization matrix API: `POST /api/differential-auth/run` and `GET /api/differential-auth/template` backed by `DifferentialAuthMatrix`.
+  - Security regression fix verification API: `POST /api/regression/verify-fix` backed by `RegressionDiffEngine.compare_scans`, enforcing the rule that disappeared findings are `UNVERIFIED_MISSING` unless explicitly re-tested and proven blocked (`VERIFIED_FIXED`).
+  - Unified Ground Truth Oracle integration: `UnifiedGroundTruthOracle` evaluates ground truth independently from target-reported flags and is wired into `AdaptiveScanController` and `scans.py` SSE broadcasting.
+  - New integration test suite: `backend/tests/test_stage3_integration.py` (10/10 tests pass).
+
+- [x] **17.7 Stage 4 Production Hardening & Clean Baseline**:
+  - Purged banned demo tenant literals (`1001`, `1042`) from production API endpoints (`causal.py` and `differential_auth.py`).
+  - Dynamic evidence hash computation in `backend/shadowboard_cli.py`.
+  - Full test baseline: **268 passed, 0 failed in 23.90s** across 38 test files.
+  - Permanent CI regression enforcement audit (`python scripts/ci_enforcement_audit.py`): **7/7 PASS**.
+  - Production frontend build (`npm run build` in `frontend/`): **clean build in 8.84s**.
 
 
 

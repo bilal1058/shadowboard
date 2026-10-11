@@ -128,6 +128,47 @@ def validate_target_url(url: str, allow_local: bool = False) -> str:
     return cleaned.rstrip("/")
 
 
+import httpcore
+
+
+class PinAndValidateNetworkBackend(httpcore.AnyIOBackend):
+    """Network backend that enforces pre-connection IP validation and connects directly to the validated IP,
+    defeating DNS-rebinding / TOCTOU attacks.
+    """
+
+    def __init__(self, allow_local: bool = False):
+        super().__init__()
+        self.allow_local = allow_local
+
+    async def connect_tcp(self, host: str, port: int, *args, **kwargs):
+        try:
+            addr_info = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+        except socket.gaierror as exc:
+            raise SSRFValidationError(f"DNS resolution failed for hostname '{host}': {exc}") from exc
+
+        if not addr_info:
+            raise SSRFValidationError(f"No IP addresses resolved for hostname '{host}'.")
+
+        for entry in addr_info:
+            ip_str = entry[4][0]
+            blocked, reason = is_ip_blocked(ip_str, allow_local=self.allow_local)
+            if blocked:
+                raise SSRFValidationError(reason)
+
+        first_ip = addr_info[0][4][0]
+        return await super().connect_tcp(first_ip, port, *args, **kwargs)
+
+
+class SSRFSafeTransport(httpx.AsyncHTTPTransport):
+    """Async transport backed by PinAndValidateNetworkBackend to prevent TOCTOU DNS-rebinding."""
+
+    def __init__(self, allow_local: bool = False, **kwargs):
+        super().__init__(**kwargs)
+        self._pool = httpcore.AsyncConnectionPool(
+            network_backend=PinAndValidateNetworkBackend(allow_local=allow_local),
+        )
+
+
 async def safe_http_get_json(
     url: str,
     allow_local: bool = False,
@@ -137,12 +178,15 @@ async def safe_http_get_json(
     """Fetch JSON from a target URL with SSRF validation, size caps, and secure redirect tracking."""
     current_url = validate_target_url(url, allow_local=allow_local)
     redirect_count = 0
+    transport = SSRFSafeTransport(allow_local=allow_local)
 
-    async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
+    async with httpx.AsyncClient(timeout=timeout, transport=transport, follow_redirects=False) as client:
         while True:
             try:
                 response = await client.get(current_url)
-            except httpx.HTTPError as exc:
+            except (httpx.HTTPError, SSRFValidationError) as exc:
+                if isinstance(exc, SSRFValidationError):
+                    raise
                 raise SSRFValidationError(f"Target connection failed: {exc}") from exc
 
             # Check for redirect
@@ -192,10 +236,13 @@ async def safe_http_put_json(
 ) -> Dict[str, Any]:
     """Issue a bounded non-redirecting configuration request to a validated target."""
     validated_url = validate_target_url(url, allow_local=allow_local)
+    transport = SSRFSafeTransport(allow_local=allow_local)
     try:
-        async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
+        async with httpx.AsyncClient(timeout=timeout, transport=transport, follow_redirects=False) as client:
             response = await client.put(validated_url, json=payload, headers=headers or {})
-    except httpx.HTTPError as exc:
+    except (httpx.HTTPError, SSRFValidationError) as exc:
+        if isinstance(exc, SSRFValidationError):
+            raise
         raise SSRFValidationError(f"Target configuration request failed: {exc}") from exc
     if response.is_redirect or response.status_code != 200:
         raise SSRFValidationError(f"Target configuration endpoint returned {response.status_code}.")
@@ -205,3 +252,4 @@ async def safe_http_put_json(
         return response.json()
     except ValueError as exc:
         raise SSRFValidationError("Target configuration response was not valid JSON.") from exc
+

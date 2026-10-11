@@ -21,7 +21,7 @@ app = FastAPI(
 
 
 def _is_test_environment() -> bool:
-    return os.getenv("APP_ENV") == "test" or "pytest" in sys.modules or "PYTEST_CURRENT_TEST" in os.environ
+    return os.getenv("APP_ENV") == "test" or os.getenv("TESTING") == "1"
 
 
 class SidecarAuthMiddleware(BaseHTTPMiddleware):

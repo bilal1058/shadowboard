@@ -48,9 +48,10 @@ class CryptographicProof(BaseModel):
 
     # 2. Authenticity (asymmetric Ed25519 digital signature proving non-repudiation and origin)
     authenticity_algorithm: str = "ED25519-RFC8032"
-    signature_ed25519_hex: str
-    signer_public_key_hex: str
+    signature_ed25519_hex: str = ""
+    signer_public_key_hex: str = ""
     key_id: str = "sb_key_primary"
+    signature_status: str = "SIGNED"  # SIGNED | UNSIGNED
     
     # Backward compatibility field (legacy alias for canonical_payload_hash)
     package_signature: str = ""
@@ -116,6 +117,7 @@ class EvidenceBundler:
         signing_key: Optional[ed25519.Ed25519PrivateKey] = None,
         key_id: Optional[str] = None,
         substrate_truth_level: str = "TARGET_INSTRUMENTED",
+        unsigned: bool = False,
     ) -> EvidencePackage:
         pkg_id = f"SBEV-{int(time.time())}-{uuid.uuid4().hex[:8]}-{finding_id[-8:]}"
 
@@ -168,35 +170,44 @@ class EvidenceBundler:
         canonical_payload_hash = canonical_hash(canonical_package_claims)
 
         # 2. Key Registry & Authenticity: Sign the canonical payload hash with real Ed25519 private key
-        registry = get_active_key_registry()
-        if signing_key:
-            key = signing_key
-            effective_key_id = key_id or "custom_ephemeral_key"
+        if unsigned:
+            effective_key_id = "unsigned"
+            signer_public_key_hex = ""
+            signature_ed25519_hex = ""
+            authenticity_algorithm = "NONE"
+            signature_status = "UNSIGNED"
         else:
-            key, registered_kid = registry.get_active_signing_key()
-            effective_key_id = key_id or registered_kid
+            registry = get_active_key_registry()
+            if signing_key:
+                key = signing_key
+                effective_key_id = key_id or "custom_ephemeral_key"
+            else:
+                key, registered_kid = registry.get_active_signing_key()
+                effective_key_id = key_id or registered_kid
 
-        public_key = key.public_key()
-        pub_bytes = public_key.public_bytes(
-            encoding=serialization.Encoding.Raw,
-            format=serialization.PublicFormat.Raw,
-        )
-        signer_public_key_hex = pub_bytes.hex()
-
-        # Ensure public key is registered in registry
-        if not registry.get_key(effective_key_id):
-            registry.register_public_key(
-                KeyRecord(
-                    key_id=effective_key_id,
-                    public_key_hex=signer_public_key_hex,
-                    status="ACTIVE",
-                    description="Evidence signing key",
-                )
+            public_key = key.public_key()
+            pub_bytes = public_key.public_bytes(
+                encoding=serialization.Encoding.Raw,
+                format=serialization.PublicFormat.Raw,
             )
+            signer_public_key_hex = pub_bytes.hex()
 
-        # Ed25519 signs the canonical payload bytes covering the full package
-        sig_bytes = key.sign(canonical_payload_hash.encode("utf-8"))
-        signature_ed25519_hex = sig_bytes.hex()
+            # Ensure public key is registered in registry
+            if not registry.get_key(effective_key_id):
+                registry.register_public_key(
+                    KeyRecord(
+                        key_id=effective_key_id,
+                        public_key_hex=signer_public_key_hex,
+                        status="ACTIVE",
+                        description="Evidence signing key",
+                    )
+                )
+
+            # Ed25519 signs the canonical payload bytes covering the full package
+            sig_bytes = key.sign(canonical_payload_hash.encode("utf-8"))
+            signature_ed25519_hex = sig_bytes.hex()
+            authenticity_algorithm = "ED25519-RFC8032"
+            signature_status = "SIGNED"
 
         proof = CryptographicProof(
             integrity_algorithm="SHA256-MERKLE-CHAIN-V1",
@@ -204,10 +215,11 @@ class EvidenceBundler:
             event_merkle_root=event_merkle_root,
             manifest_hash=manifest_hash,
             canonical_payload_hash=canonical_payload_hash,
-            authenticity_algorithm="ED25519-RFC8032",
+            authenticity_algorithm=authenticity_algorithm,
             signature_ed25519_hex=signature_ed25519_hex,
             signer_public_key_hex=signer_public_key_hex,
             key_id=effective_key_id,
+            signature_status=signature_status,
             package_signature=canonical_payload_hash,  # Backward compatibility
             substrate_truth_level=substrate_truth_level,
         )

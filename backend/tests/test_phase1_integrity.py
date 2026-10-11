@@ -138,11 +138,13 @@ async def test_security_regression_replay(monkeypatch):
 
     async def mock_internal_handler(request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content)
-        cid = request.headers.get("x-customer-id", "1001")
         req_obj = InternalChatRequest(
             messages=[InternalChatMessage(role=m["role"], content=m["content"]) for m in body.get("messages", [])]
         )
-        resp = await internal_chat(req_obj, x_customer_id=cid)
+        # `internal_chat` binds identity server-side and takes no tenant keyword argument; the
+        # previous signature here passed a non-existent `x_customer_id` kwarg, which raised and
+        # made `replay_exploit` swallow the failure and report the objective as PASS.
+        resp = await internal_chat(req_obj)
         return httpx.Response(200, json=resp)
 
     transport = httpx.MockTransport(mock_internal_handler)

@@ -9,7 +9,7 @@ import os
 from app.core.config import settings
 
 security = HTTPBearer(auto_error=False)
-is_test_env = settings.APP_ENV == "test" or "pytest" in sys.modules
+is_test_env = settings.APP_ENV == "test" or os.getenv("TESTING") == "1"
 limiter = Limiter(
     key_func=get_remote_address,
     default_limits=[settings.API_KEY_RATE_LIMIT],

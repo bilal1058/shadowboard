@@ -5,9 +5,9 @@ from pydantic import BaseModel, Field
 # ---------------------------------------------------------------------------
 # Execution mode — determines what evidence ShadowBoard can use
 # ---------------------------------------------------------------------------
-ExecutionMode = Literal["BLACK_BOX", "INSTRUMENTED"]
-# BLACK_BOX: response text only. ShadowBoard MUST NOT claim tool/RAG/memory events.
-# INSTRUMENTED: response + actual runtime events from the target's execution_trace.
+ExecutionMode = Literal["INSTRUMENTED"]
+# White-box only: response + actual runtime events from the target's execution_trace.
+# Black-box testing without telemetry is disabled; enterprise security requires verifiable execution tracing.
 
 
 # ---------------------------------------------------------------------------
@@ -63,6 +63,31 @@ class ObservationRecord(BaseModel):
     evidence_signals: List[str] = []
     decision: str = ""
     decision_reason: str = ""
+
+
+class ToolCallEventData(BaseModel):
+    name: str = ""
+    arguments: Dict[str, Any] = Field(default_factory=dict)
+    result: Optional[Any] = None
+
+
+class RagRetrievalEventData(BaseModel):
+    document_id: Optional[str] = None
+    chunks: Optional[List[Any]] = None
+    similarity: Optional[float] = None
+    tenant_id: Optional[str] = None
+
+
+class MemoryAccessEventData(BaseModel):
+    key: Optional[str] = None
+    value: Optional[Any] = None
+    session_id: Optional[str] = None
+
+
+class AuthzBlockedEventData(BaseModel):
+    rule: Optional[str] = None
+    reason: Optional[str] = None
+    session_user_id: Optional[str] = None
 
 
 class ExecutionEventSchema(BaseModel):

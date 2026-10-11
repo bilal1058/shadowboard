@@ -25,7 +25,7 @@ from app.internal_rag.rag_store import internal_vector_store
 
 
 def is_test_mode() -> bool:
-    return ("pytest" in sys.modules or "PYTEST_CURRENT_TEST" in os.environ) and not os.getenv("LIVE_LLM_TEST")
+    return (os.getenv("APP_ENV") == "test" or os.getenv("TESTING") == "1") and not os.getenv("LIVE_LLM_TEST")
 
 
 # Ensure environment variables are loaded

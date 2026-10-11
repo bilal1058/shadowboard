@@ -25,11 +25,7 @@ PUBLIC_API_PATHS = {
 
 
 def is_test_environment() -> bool:
-    if os.getenv("APP_ENV") == "test" or os.getenv("TESTING") == "1":
-        return True
-    if "pytest" in sys.modules or "PYTEST_CURRENT_TEST" in os.environ:
-        return True
-    return False
+    return os.getenv("APP_ENV") == "test" or os.getenv("TESTING") == "1"
 
 
 class AdminAuthMiddleware(BaseHTTPMiddleware):
@@ -116,8 +112,17 @@ class ProductionHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        # Build connect-src dynamically from configured CORS origins instead of wildcard localhost ports
+        allowed_connect = ["'self'"]
+        cors_origins = getattr(settings, "CORS_ORIGINS", []) or []
+        for origin in cors_origins:
+            cleaned = origin.strip().rstrip("/")
+            if cleaned and cleaned != "*" and cleaned not in allowed_connect:
+                allowed_connect.append(cleaned)
+        connect_src_str = " ".join(allowed_connect)
+
         response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; connect-src 'self' http://localhost:* http://127.0.0.1:* ws: wss:; img-src 'self' data:; "
+            f"default-src 'self'; connect-src {connect_src_str} ws: wss:; img-src 'self' data:; "
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
             "font-src 'self' https://fonts.gstatic.com; "
             "script-src 'self'; "
@@ -176,13 +181,17 @@ class ErrorHandlingMiddleware(BaseHTTPMiddleware):
         try:
             response = await call_next(request)
             return response
-        except HTTPException:
-            raise
+        except HTTPException as exc:
+            return JSONResponse(
+                status_code=exc.status_code,
+                content={"detail": exc.detail},
+                headers=dict(exc.headers or {}),
+            )
         except Exception as e:
             logger.error("Unhandled exception", error=str(e), path=request.url.path)
-            raise HTTPException(
+            return JSONResponse(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail={"error": "Internal server error"},
+                content={"detail": "Internal server error"},
             )
 
 

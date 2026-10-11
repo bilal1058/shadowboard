@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 def _is_test_environment() -> bool:
-    return "pytest" in sys.modules or "PYTEST_CURRENT_TEST" in os.environ or os.getenv("APP_ENV") == "test"
+    return os.getenv("APP_ENV") == "test" or os.getenv("TESTING") == "1"
 
 
 def _is_local_reference_url(url: str) -> bool:

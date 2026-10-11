@@ -12,6 +12,9 @@ from app.api.endpoints import (
     integrations,
     auth_session,
     reports,
+    onboarding,
+    differential_auth,
+    causal,
 )
 
 api_router = APIRouter(prefix="/api")
@@ -24,6 +27,7 @@ async def api_health():
 
 # Core endpoints
 api_router.include_router(targets.router)
+api_router.include_router(onboarding.router)
 api_router.include_router(policies.router)
 api_router.include_router(scans.router)
 api_router.include_router(findings.router)
@@ -36,3 +40,5 @@ api_router.include_router(regression.router)
 api_router.include_router(bench.router)
 api_router.include_router(evidence.router)
 api_router.include_router(integrations.router)
+api_router.include_router(differential_auth.router)
+api_router.include_router(causal.router)

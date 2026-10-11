@@ -137,3 +137,31 @@ async def compare_scan_with_baseline(request: DiffRequest, db: aiosqlite.Connect
         gate_policy=request.gate_policy,
     )
     return comparison.model_dump()
+
+
+from app.regression.diff import RegressionDiffEngine
+
+
+class FixVerificationRequest(BaseModel):
+    baseline_findings: List[Dict[str, Any]]
+    current_findings: List[Dict[str, Any]]
+    executed_rule_ids: Optional[List[str]] = None
+    baseline_scan_id: Any = "baseline"
+    current_scan_id: Any = "current"
+    strict_ci_gate: bool = True
+
+
+@router.post("/verify-fix")
+async def verify_security_fix(request: FixVerificationRequest) -> Dict[str, Any]:
+    """Evaluates whether fixed vulnerabilities were genuinely re-tested and prevented,
+    or merely omitted from testing (UNVERIFIED_MISSING).
+    """
+    diff = RegressionDiffEngine.compare_scans(
+        baseline_findings=request.baseline_findings,
+        current_findings=request.current_findings,
+        executed_rule_ids_in_current=set(request.executed_rule_ids) if request.executed_rule_ids else None,
+        baseline_scan_id=request.baseline_scan_id,
+        current_scan_id=request.current_scan_id,
+        strict_ci_gate=request.strict_ci_gate,
+    )
+    return diff.to_dict()

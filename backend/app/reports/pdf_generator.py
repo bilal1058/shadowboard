@@ -31,7 +31,7 @@ from app.reports.executive_report_builder import build_full_executive_report_mod
 
 
 def _build_pdf_sparkline_drawing(sparkline_data: Dict[str, Any], width: float = 524, height: float = 78) -> Drawing:
-    """Renders a vector sparkline line chart in ReportLab."""
+    """Renders a vector sparkline line chart in ReportLab in orange, black, and white."""
     scores = sparkline_data.get("scores", [100])
     labels = sparkline_data.get("labels", ["Run #1"])
 
@@ -39,10 +39,10 @@ def _build_pdf_sparkline_drawing(sparkline_data: Dict[str, Any], width: float = 
     # Background panel
     d.add(Rect(
         0, 0, width, height,
-        fillColor=colors.HexColor('#0b0f19'),
-        strokeColor=colors.HexColor('#1e293b'),
+        fillColor=colors.HexColor('#000000'),
+        strokeColor=colors.HexColor('#262626'),
         strokeWidth=1,
-        rx=6, ry=6
+        rx=4, ry=4
     ))
 
     padding_x = 48
@@ -53,8 +53,8 @@ def _build_pdf_sparkline_drawing(sparkline_data: Dict[str, Any], width: float = 
     # Horizontal grid lines at 0, 50, 100
     for g_val in [0, 50, 100]:
         gy = padding_y + (g_val / 100.0) * plot_h
-        d.add(Line(padding_x, gy, width - padding_x, gy, strokeColor=colors.HexColor('#1e293b'), strokeWidth=0.75))
-        d.add(String(padding_x - 8, gy - 3, str(g_val), fontName='Helvetica', fontSize=7, fillColor=colors.HexColor('#64748b'), textAnchor='end'))
+        d.add(Line(padding_x, gy, width - padding_x, gy, strokeColor=colors.HexColor('#262626'), strokeWidth=0.75))
+        d.add(String(padding_x - 8, gy - 3, str(g_val), fontName='Helvetica', fontSize=7, fillColor=colors.HexColor('#737373'), textAnchor='end'))
 
     num_pts = len(scores)
     step_x = plot_w / max(1, num_pts - 1) if num_pts > 1 else 0
@@ -72,16 +72,16 @@ def _build_pdf_sparkline_drawing(sparkline_data: Dict[str, Any], width: float = 
         line_points = []
         for px, py, _, _ in pts_coords:
             line_points.extend([px, py])
-        d.add(PolyLine(line_points, strokeColor=colors.HexColor('#10b981'), strokeWidth=2.2))
+        d.add(PolyLine(line_points, strokeColor=colors.HexColor('#f97316'), strokeWidth=2.2))
     else:
-        d.add(Line(padding_x, pts_coords[0][1], width - padding_x, pts_coords[0][1], strokeColor=colors.HexColor('#10b981'), strokeWidth=2))
+        d.add(Line(padding_x, pts_coords[0][1], width - padding_x, pts_coords[0][1], strokeColor=colors.HexColor('#f97316'), strokeWidth=2))
 
     # Dots with score badges
     for px, py, s, lbl in pts_coords:
-        pt_color = colors.HexColor('#10b981') if s >= 80 else (colors.HexColor('#f59e0b') if s >= 60 else colors.HexColor('#f43f5e'))
-        d.add(Circle(px, py, 4.5, fillColor=pt_color, strokeColor=colors.HexColor('#0b0f19'), strokeWidth=1.5))
+        pt_color = colors.HexColor('#f97316') if s < 80 else colors.HexColor('#ffffff')
+        d.add(Circle(px, py, 4.5, fillColor=pt_color, strokeColor=colors.HexColor('#000000'), strokeWidth=1.5))
         d.add(String(px, py + 6, f"{s}", fontName='Helvetica-Bold', fontSize=8, fillColor=colors.HexColor('#ffffff'), textAnchor='middle'))
-        d.add(String(px, 5, lbl, fontName='Helvetica', fontSize=6.5, fillColor=colors.HexColor('#94a3b8'), textAnchor='middle'))
+        d.add(String(px, 5, lbl, fontName='Helvetica', fontSize=6.5, fillColor=colors.HexColor('#a3a3a3'), textAnchor='middle'))
 
     return d
 
@@ -91,7 +91,7 @@ def generate_scan_pdf_report(
     findings: Optional[List[Dict[str, Any]]] = None,
     history_runs: Optional[List[Dict[str, Any]]] = None
 ) -> bytes:
-    """Generates an executive, boardroom-ready PDF security audit report."""
+    """Generates an executive, boardroom-ready PDF security audit report in orange, black, and white."""
     m = build_full_executive_report_model(scan_data, findings, history_runs)
 
     buffer = io.BytesIO()
@@ -111,7 +111,7 @@ def generate_scan_pdf_report(
         parent=styles['Heading1'],
         fontSize=18,
         leading=22,
-        textColor=colors.HexColor('#0f172a'),
+        textColor=colors.HexColor('#000000'),
         fontName='Helvetica-Bold'
     )
     subtitle_style = ParagraphStyle(
@@ -119,14 +119,14 @@ def generate_scan_pdf_report(
         parent=styles['Normal'],
         fontSize=8.5,
         leading=12,
-        textColor=colors.HexColor('#475569')
+        textColor=colors.HexColor('#555555')
     )
     section_h1 = ParagraphStyle(
         'SectionH1',
         parent=styles['Heading2'],
         fontSize=11,
         leading=15,
-        textColor=colors.HexColor('#0f172a'),
+        textColor=colors.HexColor('#000000'),
         fontName='Helvetica-Bold',
         spaceBefore=10,
         spaceAfter=5
@@ -136,20 +136,20 @@ def generate_scan_pdf_report(
         parent=styles['Normal'],
         fontSize=8,
         leading=11.5,
-        textColor=colors.HexColor('#334155')
+        textColor=colors.HexColor('#333333')
     )
     body_bold = ParagraphStyle(
         'BodyBold',
         parent=body_style,
         fontName='Helvetica-Bold',
-        textColor=colors.HexColor('#0f172a')
+        textColor=colors.HexColor('#000000')
     )
     code_style = ParagraphStyle(
         'CodeText',
         parent=styles['Normal'],
         fontSize=7,
         leading=9.5,
-        textColor=colors.HexColor('#e11d48'),
+        textColor=colors.HexColor('#f97316'),
         fontName='Courier'
     )
     cell_style = ParagraphStyle(
@@ -157,7 +157,7 @@ def generate_scan_pdf_report(
         parent=styles['Normal'],
         fontSize=7.5,
         leading=10,
-        textColor=colors.HexColor('#1e293b')
+        textColor=colors.HexColor('#1a1a1a')
     )
     cell_bold = ParagraphStyle(
         'CellBold',
@@ -167,7 +167,7 @@ def generate_scan_pdf_report(
     cell_center = ParagraphStyle(
         'CellCenter',
         parent=cell_style,
-        alignment=1  # Centered
+        alignment=1
     )
 
     story = []
@@ -177,18 +177,18 @@ def generate_scan_pdf_report(
     # =========================================================================
     
     # 1. Header Banner
-    story.append(Paragraph("🛡️ SHADOWBOARD — EXECUTIVE AI SECURITY AUDIT", title_style))
+    story.append(Paragraph("SHADOWBOARD — EXECUTIVE AI SECURITY AUDIT", title_style))
     story.append(Paragraph(
         f"<b>Official Non-Repudiation Assessment</b> • Scan #{m['scan_id']} • "
         f"Generated: {m['generated_at']}",
         subtitle_style
     ))
-    story.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#e11d48'), spaceBefore=6, spaceAfter=8))
+    story.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#f97316'), spaceBefore=6, spaceAfter=8))
 
     # 2. Executive Scorecard Table
     score = m["overall_score"]
     grade = m["risk_grade"]
-    score_color = colors.HexColor('#059669') if score >= 80 else (colors.HexColor('#d97706') if score >= 60 else colors.HexColor('#dc2626'))
+    score_color = colors.HexColor('#000000') if score >= 80 else colors.HexColor('#f97316')
 
     scorecard_data = [
         [
@@ -213,9 +213,9 @@ def generate_scan_pdf_report(
 
     scorecard_table = Table(scorecard_data, colWidths=[130, 132, 130, 132])
     scorecard_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#f8fafc')),
-        ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#e2e8f0')),
-        ('INNERGRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#e2e8f0')),
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#fafafa')),
+        ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#e5e5e5')),
+        ('INNERGRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#e5e5e5')),
         ('TOPPADDING', (0, 0), (-1, -1), 4),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
         ('LEFTPADDING', (0, 0), (-1, -1), 7),
@@ -227,7 +227,7 @@ def generate_scan_pdf_report(
     # 3. Risk Score Trend Sparkline Section
     story.append(Paragraph(
         f"<b>1. Risk Score Trajectory & Benchmark Trend</b> &nbsp;&nbsp;"
-        f"<font color='#059669'><b>[{m['sparkline']['delta_str']} - {m['sparkline']['direction']}]</b></font>",
+        f"<font color='#f97316'><b>[{m['sparkline']['delta_str']} - {m['sparkline']['direction']}]</b></font>",
         section_h1
     ))
     story.append(Paragraph(
@@ -254,14 +254,14 @@ def generate_scan_pdf_report(
     ]
     framework_table = Table(framework_data, colWidths=[114, 120, 165, 125])
     framework_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0f172a')),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#000000')),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
         ('FONTSIZE', (0, 0), (-1, -1), 7),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e1')),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#e5e5e5')),
         ('TOPPADDING', (0, 0), (-1, -1), 3),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
-        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8fafc')])
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#fafafa')])
     ]))
     story.append(framework_table)
 
@@ -305,15 +305,15 @@ def generate_scan_pdf_report(
 
     matrix_table = Table(matrix_table_data, colWidths=[224, 60, 60, 60, 60, 60])
     matrix_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e293b')),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#000000')),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
         ('FONTSIZE', (0, 0), (-1, -1), 7.5),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e1')),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#e5e5e5')),
         ('TOPPADDING', (0, 0), (-1, -1), 3.5),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 3.5),
-        ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.white, colors.HexColor('#f8fafc')]),
-        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#e2e8f0')),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.white, colors.HexColor('#fafafa')]),
+        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#f0f0f0')),
     ]))
     story.append(matrix_table)
     story.append(Spacer(1, 10))
@@ -342,14 +342,14 @@ def generate_scan_pdf_report(
 
         findings_table = Table(findings_table_data, colWidths=[64, 58, 150, 122, 130])
         findings_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#881337')),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#000000')),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTSIZE', (0, 0), (-1, -1), 7),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#fecdd3')),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#e5e5e5')),
             ('TOPPADDING', (0, 0), (-1, -1), 3),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#fff1f2')])
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#fafafa')])
         ]))
         story.append(findings_table)
 
@@ -370,16 +370,16 @@ def generate_scan_pdf_report(
         model_reply = sample_f.get("target_response") or sample_f.get("response_text") or "Model output"
 
         evidence_box_data = [
-            [Paragraph("<b>📤 Attacker Probe Payload (Sent):</b>", body_style)],
-            [Paragraph(f"<font color='#991b1b'>{prompt_sent[:280]}</font>", code_style)],
-            [Paragraph("<b>📥 Target Model Response (Received):</b>", body_style)],
-            [Paragraph(f"<font color='#1e293b'>{model_reply[:280]}</font>", code_style)],
-            [Paragraph(f"<b>SHA-256 Non-Repudiation Hash:</b> <font color='#e11d48'>{sample_f.get('evidence_hash', 'N/A')}</font>", code_style)]
+            [Paragraph("<b>Attacker Probe Payload (Sent):</b>", body_style)],
+            [Paragraph(f"<font color='#f97316'>{prompt_sent[:280]}</font>", code_style)],
+            [Paragraph("<b>Target Model Response (Received):</b>", body_style)],
+            [Paragraph(f"<font color='#000000'>{model_reply[:280]}</font>", code_style)],
+            [Paragraph(f"<b>SHA-256 Non-Repudiation Hash:</b> <font color='#f97316'>{sample_f.get('evidence_hash', 'N/A')}</font>", code_style)]
         ]
         evidence_table = Table(evidence_box_data, colWidths=[524])
         evidence_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#fdf2f8')),
-            ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#f43f5e')),
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#fafafa')),
+            ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#f97316')),
             ('TOPPADDING', (0, 0), (-1, -1), 3),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
             ('LEFTPADDING', (0, 0), (-1, -1), 7),
@@ -406,7 +406,7 @@ def generate_scan_pdf_report(
 
     for item in m["remediation_items"]:
         is_resolved = item["status"] == "VERIFIED MITIGATED"
-        status_color = "#059669" if is_resolved else "#dc2626"
+        status_color = "#000000" if is_resolved else "#f97316"
         status_text = f"<font color='{status_color}'><b>[{item['status']}]</b></font>"
 
         rem_block_data = [
@@ -423,11 +423,11 @@ def generate_scan_pdf_report(
                 Paragraph("", body_style)
             ],
             [
-                Paragraph(f"<b>Engineered Guardrail:</b><br/><font color='#047857'>{item['code_playbook']}</font>", code_style),
+                Paragraph(f"<b>Engineered Guardrail:</b><br/><font color='#000000'>{item['code_playbook']}</font>", code_style),
                 Paragraph("", body_style)
             ],
             [
-                Paragraph(f"<b>CI Verification Command:</b> <font color='#0284c7'><code>{item['verification_cmd']}</code></font>", body_style),
+                Paragraph(f"<b>CI Verification Command:</b> <font color='#f97316'><code>{item['verification_cmd']}</code></font>", body_style),
                 Paragraph("", body_style)
             ]
         ]
@@ -436,9 +436,9 @@ def generate_scan_pdf_report(
             ('SPAN', (0, 2), (1, 2)),
             ('SPAN', (0, 3), (1, 3)),
             ('SPAN', (0, 4), (1, 4)),
-            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#f8fafc') if is_resolved else colors.HexColor('#fff1f2')),
-            ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#10b981') if is_resolved else colors.HexColor('#f43f5e')),
-            ('INNERGRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#e2e8f0')),
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#ffffff') if is_resolved else colors.HexColor('#fafafa')),
+            ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#000000') if is_resolved else colors.HexColor('#f97316')),
+            ('INNERGRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#e5e5e5')),
             ('TOPPADDING', (0, 0), (-1, -1), 3),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
             ('LEFTPADDING', (0, 0), (-1, -1), 6),
@@ -463,27 +463,27 @@ def generate_scan_pdf_report(
         Spacer(1, 4),
         Table([
             [Paragraph("<b>Audit Ledger Record ID</b>", cell_bold), Paragraph(m['crypto_record']['ledger_record_id'], cell_style)],
-            [Paragraph("<b>SHA-256 Merkle Root</b>", cell_bold), Paragraph(f"<font color='#047857'><b>{m['crypto_record']['merkle_root']}</b></font>", code_style)],
-            [Paragraph("<b>Canonical Manifest Hash</b>", cell_bold), Paragraph(f"<font color='#0284c7'><b>{m['crypto_record']['manifest_hash']}</b></font>", code_style)],
-            [Paragraph("<b>Ed25519 Signature</b>", cell_bold), Paragraph(f"<font color='#be123c'>{m['crypto_record']['signature_ed25519']}</font>", code_style)],
+            [Paragraph("<b>SHA-256 Merkle Root</b>", cell_bold), Paragraph(f"<font color='#f97316'><b>{m['crypto_record']['merkle_root']}</b></font>", code_style)],
+            [Paragraph("<b>Canonical Manifest Hash</b>", cell_bold), Paragraph(f"<font color='#000000'><b>{m['crypto_record']['manifest_hash']}</b></font>", code_style)],
+            [Paragraph("<b>Ed25519 Signature</b>", cell_bold), Paragraph(f"<font color='#f97316'>{m['crypto_record']['signature_ed25519']}</font>", code_style)],
             [Paragraph("<b>Signer Key & Truth Level</b>", cell_bold), Paragraph(f"{m['crypto_record']['key_id']} • {m['crypto_record']['substrate_truth_level']}", cell_style)],
-            [Paragraph("<b>Offline CLI Verifier</b>", cell_bold), Paragraph(f"<font color='#0f172a'><b>{m['crypto_record']['verification_cli']}</b></font>", code_style)],
+            [Paragraph("<b>Offline CLI Verifier</b>", cell_bold), Paragraph(f"<font color='#000000'><b>{m['crypto_record']['verification_cli']}</b></font>", code_style)],
             [Paragraph("<b>Attestation Timestamp</b>", cell_bold), Paragraph(m['crypto_record']['timestamp_iso'], cell_style)],
         ], colWidths=[150, 374], style=[
-            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#f1f5f9')),
-            ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#881337')),
-            ('INNERGRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e1')),
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#fafafa')),
+            ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#262626')),
+            ('INNERGRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#e5e5e5')),
             ('TOPPADDING', (0, 0), (-1, -1), 3.5),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 3.5),
             ('LEFTPADDING', (0, 0), (-1, -1), 6),
             ('RIGHTPADDING', (0, 0), (-1, -1), 6),
         ]),
         Spacer(1, 10),
-        HRFlowable(width="100%", thickness=0.5, color=colors.HexColor('#cbd5e1'), spaceBefore=4, spaceAfter=4),
+        HRFlowable(width="100%", thickness=0.5, color=colors.HexColor('#e5e5e5'), spaceBefore=4, spaceAfter=4),
         Paragraph(
             "CONFIDENTIAL — Prepared by ShadowBoard Automated Security Evaluation Engine • "
             "Tamper-proof audit record backed by SQLite Audit Vault & Ed25519 Non-Repudiation Chain.",
-            ParagraphStyle('Footer', parent=body_style, fontSize=7, textColor=colors.HexColor('#94a3b8'))
+            ParagraphStyle('Footer', parent=body_style, fontSize=7, textColor=colors.HexColor('#737373'))
         )
     ]))
 

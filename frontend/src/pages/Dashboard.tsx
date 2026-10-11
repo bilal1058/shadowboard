@@ -5,12 +5,15 @@ import { Target } from '@/types/api';
 import toast from 'react-hot-toast';
 import ScanInspectorModal from '@/components/ScanInspectorModal';
 import TargetInspectorModal from '@/components/TargetInspectorModal';
+import OnboardTargetModal from '@/components/OnboardTargetModal';
+import DifferentialAuthMatrixViewer from '@/components/DifferentialAuthMatrixViewer';
 
 export const DashboardPage: React.FC = () => {
   const { targets, loading: targetsLoading, error: targetsError, refresh: refreshTargets } = useTargets();
   const { scans, loading: scansLoading, refresh: refreshScans } = useScans();
 
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'targets' | 'history'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'targets' | 'diff_auth' | 'history'>('dashboard');
+  const [onboardModalOpen, setOnboardModalOpen] = useState<boolean>(false);
   const [selectedTargetId, setSelectedTargetId] = useState<number>(0);
   const [selectedScanModalId, setSelectedScanModalId] = useState<number | null>(null);
   const [inspectingTarget, setInspectingTarget] = useState<Target | null>(null);
@@ -18,14 +21,9 @@ export const DashboardPage: React.FC = () => {
   const [adminSessionActive, setAdminSessionActive] = useState<boolean>(false);
   const [apiKeyModalOpen, setApiKeyModalOpen] = useState<boolean>(false);
 
-  // Registered reference targets: strictly keep only document-aware chatbot agents (with knowledge base / RAG)
-  const visibleTargets = targets.filter(
-    (tgt) => Boolean(tgt.capabilities?.rag || tgt.target_type === 'INTERNAL_RAG' || tgt.base_url?.includes('internal-rag'))
-  );
-
   const { trigger, isScanning } = useTriggerScan(selectedTargetId);
 
-  // Check saved admin session on mount via HttpOnly cookie
+  // Check saved admin session on mount
   useEffect(() => {
     api.checkSession().then((active) => {
       if (active) {
@@ -34,16 +32,16 @@ export const DashboardPage: React.FC = () => {
     });
   }, []);
 
-  // Sync selected target when visible targets list updates
+  // Sync selected target when targets list updates
   useEffect(() => {
-    if (visibleTargets.length > 0) {
-      if (!selectedTargetId || !visibleTargets.some((t) => t.id === selectedTargetId)) {
-        setSelectedTargetId(visibleTargets[0].id);
+    if (targets.length > 0) {
+      if (!selectedTargetId || !targets.some((t) => t.id === selectedTargetId)) {
+        setSelectedTargetId(targets[0].id);
       }
     }
-  }, [visibleTargets, selectedTargetId]);
+  }, [targets, selectedTargetId]);
 
-  // Automatically reload targets and scans when admin session becomes active
+  // Reload targets and scans when admin session becomes active
   useEffect(() => {
     if (adminSessionActive) {
       refreshTargets();
@@ -59,19 +57,19 @@ export const DashboardPage: React.FC = () => {
       setAdminSessionActive(true);
       setApiKeyModalOpen(false);
       setApiKey('');
-      toast.success('Administrative session established');
+      toast.success('Session authenticated');
       await refreshTargets();
       await refreshScans();
     } catch (error: any) {
-      toast.error(error.message || 'Administrative authentication failed');
+      toast.error(error.message || 'Authentication failed');
     }
   };
 
   const handleStartScan = async () => {
     try {
-      toast.loading('Initiating security assessment...', { id: 'scan-trigger' });
+      toast.loading('Starting security scan...', { id: 'scan-trigger' });
       const result = await trigger();
-      toast.success(`Scan #${result.scan_id} initiated`, { id: 'scan-trigger' });
+      toast.success(`Scan #${result.scan_id} started`, { id: 'scan-trigger' });
       setSelectedScanModalId(result.scan_id);
       setTimeout(refreshScans, 1500);
     } catch (err: any) {
@@ -79,19 +77,51 @@ export const DashboardPage: React.FC = () => {
     }
   };
 
+  const handleDeleteScan = async (scanId: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!window.confirm(`Delete scan #${scanId} record?`)) return;
+    try {
+      const res = await fetch(`/api/scans/${scanId}`, { method: 'DELETE' });
+      if (res.ok) {
+        toast.success(`Scan #${scanId} deleted`);
+        refreshScans();
+      } else {
+        toast.error('Failed to delete scan');
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to delete scan');
+    }
+  };
+
+  const handleStopScan = async (scanId: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const res = await fetch(`/api/scans/${scanId}/stop`, { method: 'POST' });
+      if (res.ok) {
+        toast.success(`Scan #${scanId} stopped`);
+        refreshScans();
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to stop scan');
+    }
+  };
+
+  const selectedTarget = targets.find((t) => t.id === selectedTargetId);
 
   return (
-    <div className="min-h-screen bg-[#070709] text-slate-100 flex flex-col font-sans">
+    <div className="min-h-screen bg-black text-white flex flex-col font-sans selection:bg-orange-500 selection:text-black">
       {/* Navigation Bar */}
-      <nav className="h-16 px-6 bg-[#0c0c10] border-b border-[#1f1b22] flex items-center justify-between sticky top-0 z-40">
-        <div className="flex items-center space-x-6">
-          <div className="flex items-center space-x-3 cursor-pointer" onClick={() => setActiveTab('dashboard')}>
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-rose-600 to-rose-900 flex items-center justify-center font-black text-white text-base shadow-lg shadow-rose-900/30">
-              🛡️
+      <nav className="h-16 px-6 bg-black border-b border-[#262626] flex items-center justify-between sticky top-0 z-40">
+        <div className="flex items-center space-x-8">
+          <div
+            className="flex items-center space-x-3 cursor-pointer"
+            onClick={() => setActiveTab('dashboard')}
+          >
+            <div className="w-8 h-8 rounded bg-orange-500 flex items-center justify-center font-black text-black text-sm tracking-tighter">
+              SB
             </div>
-            <span className="text-base font-extrabold tracking-wider text-white uppercase">ShadowBoard</span>
-            <span className="px-2 py-0.5 rounded text-[10px] bg-rose-950/80 text-rose-400 font-mono border border-rose-600/40">
-              SECURITY CONSOLE
+            <span className="text-sm font-bold tracking-widest text-white uppercase font-mono">
+              SHADOWBOARD
             </span>
           </div>
 
@@ -99,85 +129,99 @@ export const DashboardPage: React.FC = () => {
           <div className="hidden md:flex items-center space-x-1 font-mono text-xs">
             <button
               onClick={() => setActiveTab('dashboard')}
-              className={`px-3 py-1.5 rounded-lg transition-colors flex items-center space-x-1.5 ${
+              className={`px-3 py-1.5 rounded transition-colors ${
                 activeTab === 'dashboard'
-                  ? 'bg-rose-950/40 text-rose-400 border border-rose-800/40'
-                  : 'text-slate-400 hover:text-white hover:bg-[#16161e]'
+                  ? 'bg-[#141414] text-orange-400 border border-orange-500/40 font-semibold'
+                  : 'text-[#a3a3a3] hover:text-white hover:bg-[#141414]'
               }`}
             >
-              <span>📊</span>
-              <span>Overview</span>
+              Overview
             </button>
 
             <button
               onClick={() => setActiveTab('targets')}
-              className={`px-3 py-1.5 rounded-lg transition-colors flex items-center space-x-1.5 ${
+              className={`px-3 py-1.5 rounded transition-colors ${
                 activeTab === 'targets'
-                  ? 'bg-rose-950/40 text-rose-400 border border-rose-800/40'
-                  : 'text-slate-400 hover:text-white hover:bg-[#16161e]'
+                  ? 'bg-[#141414] text-orange-400 border border-orange-500/40 font-semibold'
+                  : 'text-[#a3a3a3] hover:text-white hover:bg-[#141414]'
               }`}
             >
-              <span>🎯</span>
-              <span>Targets Substrate ({visibleTargets.length})</span>
+              Targets ({targets.length})
+            </button>
+
+            <button
+              onClick={() => setActiveTab('diff_auth')}
+              className={`px-3 py-1.5 rounded transition-colors ${
+                activeTab === 'diff_auth'
+                  ? 'bg-[#141414] text-orange-400 border border-orange-500/40 font-semibold'
+                  : 'text-[#a3a3a3] hover:text-white hover:bg-[#141414]'
+              }`}
+            >
+              Diff Auth
             </button>
 
             <button
               onClick={() => setActiveTab('history')}
-              className={`px-3 py-1.5 rounded-lg transition-colors flex items-center space-x-1.5 ${
+              className={`px-3 py-1.5 rounded transition-colors ${
                 activeTab === 'history'
-                  ? 'bg-rose-950/40 text-rose-400 border border-rose-800/40'
-                  : 'text-slate-400 hover:text-white hover:bg-[#16161e]'
+                  ? 'bg-[#141414] text-orange-400 border border-orange-500/40 font-semibold'
+                  : 'text-[#a3a3a3] hover:text-white hover:bg-[#141414]'
               }`}
             >
-              <span>📋</span>
-              <span>Scans & Reports ({scans.length})</span>
+              Scans ({scans.length})
             </button>
           </div>
         </div>
 
         <div className="flex items-center space-x-3">
           <button
-            onClick={() => setApiKeyModalOpen(true)}
-            className="px-3 py-1.5 rounded text-xs bg-[#16161e] hover:bg-[#20202c] border border-[#2b2733] text-slate-300 font-mono transition-colors flex items-center space-x-1.5"
+            onClick={() => setOnboardModalOpen(true)}
+            className="px-3.5 py-1.5 rounded text-xs font-semibold bg-orange-500 hover:bg-orange-600 text-black font-mono transition-colors"
           >
-            <span>{adminSessionActive ? '🔑 Session Active' : '⚙️ Authenticate'}</span>
+            + Onboard Target
+          </button>
+
+          <button
+            onClick={() => setApiKeyModalOpen(true)}
+            className="px-3 py-1.5 rounded text-xs bg-[#141414] hover:bg-[#1a1a1a] border border-[#262626] text-[#a3a3a3] hover:text-white font-mono transition-colors"
+          >
+            {adminSessionActive ? 'Session Active' : 'Authenticate'}
           </button>
         </div>
       </nav>
 
       {/* Main Container */}
       <main className="flex-1 p-6 max-w-7xl w-full mx-auto space-y-6">
-        {/* API Key Modal */}
+        {/* Authentication Modal */}
         {apiKeyModalOpen && (
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="bg-[#111116] border border-[#2b2733] rounded-xl max-w-md w-full p-6 space-y-4 shadow-2xl">
-              <h3 className="text-base font-bold text-white flex items-center space-x-2">
-                <span>🔑</span>
-                <span>Configure Admin Authentication</span>
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-[#0a0a0a] border border-[#262626] rounded-lg max-w-md w-full p-6 space-y-4">
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono">
+                Admin Authentication
               </h3>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                When <code className="text-rose-300 bg-rose-950/50 px-1 py-0.5 rounded">SHADOWBOARD_ADMIN_KEY</code> is enabled on the backend, all scan management endpoints require bearer token authentication.
+              <p className="text-xs text-[#a3a3a3] leading-relaxed">
+                Enter your admin API key to manage targets and scans.
               </p>
               <div>
-                <label className="block text-xs font-mono text-slate-300 mb-1">Admin API Key</label>
+                <label className="block text-xs font-mono text-[#a3a3a3] mb-1">API Key</label>
                 <input
                   type="password"
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
                   placeholder="Enter SHADOWBOARD_ADMIN_KEY..."
-                  className="w-full bg-[#070709] border border-[#2b2733] rounded px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-rose-500"
+                  className="w-full bg-black border border-[#262626] rounded px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-orange-500"
                 />
               </div>
               <div className="flex justify-end space-x-2 pt-2">
                 <button
                   onClick={() => setApiKeyModalOpen(false)}
-                  className="px-3 py-1.5 rounded text-xs text-slate-400 hover:text-white"
+                  className="px-3 py-1.5 rounded text-xs text-[#a3a3a3] hover:text-white font-mono"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={() => handleSaveApiKey(apiKey)}
-                  className="px-4 py-1.5 rounded text-xs font-semibold bg-rose-600 hover:bg-rose-500 text-white shadow-md shadow-rose-900/40"
+                  className="px-4 py-1.5 rounded text-xs font-semibold bg-orange-500 hover:bg-orange-600 text-black font-mono"
                 >
                   Save Key
                 </button>
@@ -186,252 +230,233 @@ export const DashboardPage: React.FC = () => {
           </div>
         )}
 
-        {/* TAB 1: DASHBOARD / OVERVIEW */}
+        {/* TAB 1: OVERVIEW */}
         {activeTab === 'dashboard' && (
           <>
-            {/* Target Selection & Scan Trigger */}
-            <div className="bg-[#111116] border border-[#1f1b22] rounded-xl p-5 space-y-4">
-              <div className="flex flex-wrap items-center justify-between border-b border-[#1f1b22] pb-3 gap-3">
+            {/* Target Selector Card */}
+            <div className="bg-[#0a0a0a] border border-[#262626] rounded-lg p-5 space-y-4">
+              <div className="flex flex-wrap items-center justify-between border-b border-[#262626] pb-3 gap-3">
                 <div>
-                  <h2 className="text-sm font-bold text-white tracking-wide uppercase flex items-center space-x-2">
-                    <span>🎯</span>
-                    <span>Target Substrate &amp; Dispatcher</span>
+                  <h2 className="text-xs font-bold text-white uppercase tracking-widest font-mono">
+                    Target Dispatcher
                   </h2>
-                  <p className="text-xs text-slate-400 mt-0.5">Select a registered reference agent to execute automated adversarial probes.</p>
+                  <p className="text-xs text-[#a3a3a3] mt-0.5">
+                    Select a target agent and launch adversarial security tests.
+                  </p>
                 </div>
                 <div className="flex items-center space-x-2">
                   <button
                     onClick={() => setActiveTab('targets')}
-                    className="px-3 py-1.5 rounded-lg text-xs text-slate-300 hover:text-white bg-[#181822] border border-[#2b2733] font-mono transition-colors"
+                    className="px-3 py-1.5 rounded text-xs text-[#a3a3a3] hover:text-white bg-[#141414] border border-[#262626] font-mono transition-colors"
                   >
-                    View All Targets ↗
+                    View All Targets
                   </button>
                   <button
                     onClick={refreshTargets}
-                    className="px-3 py-1.5 rounded-lg text-xs text-slate-400 hover:text-slate-200 bg-[#181822] border border-[#2b2733] font-mono transition-colors"
+                    className="px-3 py-1.5 rounded text-xs text-[#a3a3a3] hover:text-white bg-[#141414] border border-[#262626] font-mono transition-colors"
                   >
-                    ⟳ Refresh
+                    Refresh
                   </button>
                 </div>
               </div>
 
               {targetsLoading ? (
-                <div className="text-xs text-slate-500 py-6 text-center">Loading targets from persistence...</div>
+                <div className="text-xs text-[#737373] py-6 text-center font-mono">
+                  Loading targets...
+                </div>
               ) : targetsError ? (
-                <div className="text-xs text-amber-300 py-4 bg-amber-950/20 border border-amber-900/40 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="flex items-center space-x-2">
-                    <span>🔐</span>
-                    <span>Admin authentication key required to view targets and execute assessments.</span>
-                  </div>
+                <div className="text-xs text-orange-400 py-4 bg-orange-950/20 border border-orange-500/40 rounded p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>Admin key required to access targets.</div>
                   <button
                     onClick={() => setApiKeyModalOpen(true)}
-                    className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-rose-600 hover:bg-rose-500 text-white shadow-sm shrink-0"
+                    className="px-3.5 py-1.5 rounded text-xs font-semibold bg-orange-500 hover:bg-orange-600 text-black font-mono shrink-0"
                   >
-                    Authenticate Now
+                    Authenticate
                   </button>
+                </div>
+              ) : targets.length === 0 ? (
+                <div className="text-xs text-[#737373] py-8 text-center border border-dashed border-[#262626] rounded font-mono">
+                  No targets registered. Click &quot;+ Onboard Target&quot; above.
                 </div>
               ) : (
                 <div className="space-y-4">
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {visibleTargets.map((tgt) => {
-                      const caps: any = tgt.capabilities || {};
+                    {targets.map((tgt) => {
                       const isSelected = selectedTargetId === tgt.id;
                       return (
                         <div
                           key={tgt.id}
-                          className={`rounded-lg p-3 border transition-all flex flex-col justify-between ${
+                          onClick={() => setSelectedTargetId(tgt.id)}
+                          className={`rounded-lg p-3.5 border transition-all cursor-pointer flex flex-col justify-between ${
                             isSelected
-                              ? 'border-rose-500/80 bg-rose-950/20 shadow-md shadow-rose-950/30'
-                              : 'border-[#1f1b22] bg-[#0c0c10] hover:border-slate-700'
+                              ? 'border-orange-500 bg-orange-950/20'
+                              : 'border-[#262626] bg-black hover:border-[#404040]'
                           }`}
                         >
-                          <div
-                            onClick={() => setSelectedTargetId(tgt.id)}
-                            className="cursor-pointer space-y-2"
-                          >
+                          <div className="space-y-2">
                             <div className="flex items-center justify-between">
-                              <span className="font-semibold text-xs text-white">#{tgt.id} {tgt.name}</span>
-                              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#16161e] text-slate-400 border border-[#26202c]">
+                              <span className="font-semibold text-xs text-white font-mono">
+                                #{tgt.id} {tgt.name}
+                              </span>
+                              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#141414] text-[#a3a3a3] border border-[#262626]">
                                 {tgt.target_type || 'AGENT'}
                               </span>
                             </div>
-                            <div className="text-[11px] font-mono text-slate-400 truncate">
+                            <div className="text-[11px] font-mono text-[#a3a3a3] truncate">
                               {tgt.base_url}
                             </div>
-
-                            {/* Capabilities tags */}
-                            <div className="flex flex-wrap gap-1.5 pt-1">
-                              {caps.chat !== false && (
-                                <span className="px-1.5 py-0.2 rounded text-[9px] font-mono bg-emerald-950/80 text-emerald-400 border border-emerald-800/40">
-                                  CHATBOT
-                                </span>
-                              )}
-                              {caps.rag && (
-                                <span className="px-1.5 py-0.2 rounded text-[9px] font-mono bg-indigo-950/80 text-indigo-400 border border-indigo-800/40">
-                                  RAG
-                                </span>
-                              )}
-                              {caps.tools && (
-                                <span className="px-1.5 py-0.2 rounded text-[9px] font-mono bg-amber-950/80 text-amber-400 border border-amber-800/40">
-                                  {caps.tool_names?.length ? `${caps.tool_names.length} TOOLS` : 'TOOLS'}
-                                </span>
-                              )}
-                              {caps.data_access && (
-                                <span className="px-1.5 py-0.2 rounded text-[9px] font-mono bg-rose-950/80 text-rose-400 border border-rose-800/40">
-                                  DATA ACCESS
-                                </span>
-                              )}
+                            <div className="text-[10px] font-mono text-[#737373]">
+                              Model: <span className="text-white">{tgt.model_name || 'default'}</span>
                             </div>
                           </div>
 
-                          <div className="mt-3 pt-2 border-t border-[#1f1b22] flex items-center justify-between">
+                          <div className="mt-3 pt-2.5 border-t border-[#262626] flex items-center justify-between">
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setInspectingTarget(tgt);
                               }}
-                              className="text-[11px] font-mono text-indigo-400 hover:text-indigo-300 transition-colors"
+                              className="text-[11px] font-mono text-orange-400 hover:text-orange-300 transition-colors"
                             >
-                              🔍 Inspect &amp; Sandbox &rarr;
+                              Sandbox &rarr;
                             </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedTargetId(tgt.id);
-                              }}
+                            <span
                               className={`text-[10px] font-mono px-2 py-0.5 rounded ${
-                                isSelected ? 'bg-rose-600 text-white' : 'bg-[#181822] text-slate-400'
+                                isSelected
+                                  ? 'bg-orange-500 text-black font-semibold'
+                                  : 'bg-[#141414] text-[#737373]'
                               }`}
                             >
                               {isSelected ? 'Selected' : 'Select'}
-                            </button>
+                            </span>
                           </div>
                         </div>
                       );
                     })}
-
                   </div>
 
-                  <div className="pt-2 border-t border-[#1f1b22] flex flex-wrap items-center justify-between gap-4">
-                    <div className="flex items-center space-x-2 text-xs text-slate-400 font-mono">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                      <span className="text-emerald-400 font-semibold">100% Policy Enforcement &amp; Guardrails Enforced</span>
-                      <span className="text-slate-500 hidden sm:inline">• Production Hardened Baseline</span>
+                  <div className="pt-3 border-t border-[#262626] flex flex-wrap items-center justify-between gap-4">
+                    <div className="text-xs font-mono text-[#a3a3a3]">
+                      Target Active:{' '}
+                      <span className="text-white font-semibold">
+                        {selectedTarget ? `#${selectedTarget.id} ${selectedTarget.name}` : 'None'}
+                      </span>
                     </div>
 
                     <button
                       onClick={handleStartScan}
-                      disabled={isScanning || visibleTargets.length === 0}
-                      className="px-5 py-2 rounded-lg text-xs font-bold tracking-wide uppercase bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white shadow-lg shadow-rose-900/40 transition-all flex items-center space-x-2"
+                      disabled={isScanning || targets.length === 0}
+                      className="px-5 py-2 rounded text-xs font-bold uppercase tracking-wider bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-black font-mono transition-colors"
                     >
-                      <span>{isScanning ? '⏳ Executing...' : '⚡ Launch Security Assessment'}</span>
+                      {isScanning ? 'Executing Scan...' : 'Run Security Scan'}
                     </button>
                   </div>
                 </div>
               )}
             </div>
 
-            {/* Scan History Table */}
-            <div className="bg-[#111116] border border-[#1f1b22] rounded-xl p-5 space-y-4">
-              <div className="flex items-center justify-between border-b border-[#1f1b22] pb-3">
+            {/* Recent Scans Table */}
+            <div className="bg-[#0a0a0a] border border-[#262626] rounded-lg p-5 space-y-4">
+              <div className="flex items-center justify-between border-b border-[#262626] pb-3">
                 <div>
-                  <h2 className="text-sm font-bold text-white tracking-wide uppercase flex items-center space-x-2">
-                    <span>📋</span>
-                    <span>Security Assessment History</span>
+                  <h2 className="text-xs font-bold text-white uppercase tracking-widest font-mono">
+                    Recent Scans
                   </h2>
-                  <p className="text-xs text-slate-400 mt-0.5">Historical verification runs, risk scores, and cryptographic findings</p>
+                  <p className="text-xs text-[#a3a3a3] mt-0.5">
+                    Security verification runs and audit findings.
+                  </p>
                 </div>
                 <button
                   onClick={refreshScans}
-                  className="text-xs text-slate-400 hover:text-slate-200 font-mono"
+                  className="text-xs text-[#a3a3a3] hover:text-white font-mono"
                 >
-                  ⟳ Refresh
+                  Refresh
                 </button>
               </div>
 
               {scansLoading ? (
-                <div className="text-xs text-slate-500 py-6 text-center">Loading scan runs...</div>
+                <div className="text-xs text-[#737373] py-6 text-center font-mono">
+                  Loading scans...
+                </div>
               ) : scans.length === 0 ? (
-                <div className="text-xs text-slate-500 py-8 text-center border border-dashed border-[#1f1b22] rounded-lg">
-                  No scan assessments executed yet. Click &quot;Launch Security Assessment&quot; above.
+                <div className="text-xs text-[#737373] py-8 text-center border border-dashed border-[#262626] rounded font-mono">
+                  No scans executed yet. Click &quot;Run Security Scan&quot; above.
                 </div>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
+                  <table className="w-full text-left text-xs font-mono">
                     <thead>
-                      <tr className="border-b border-[#1f1b22] text-slate-400 font-mono text-[11px]">
+                      <tr className="border-b border-[#262626] text-[#a3a3a3] text-[11px]">
                         <th className="py-2.5 px-3">SCAN ID</th>
                         <th className="py-2.5 px-3">TARGET</th>
-                        <th className="py-2.5 px-3">MODE</th>
                         <th className="py-2.5 px-3">STATUS</th>
-                        <th className="py-2.5 px-3">CONFIRMED VULNS</th>
-                        <th className="py-2.5 px-3">RISK SCORE</th>
+                        <th className="py-2.5 px-3">BREACHES</th>
+                        <th className="py-2.5 px-3">SCORE</th>
                         <th className="py-2.5 px-3">STARTED</th>
                         <th className="py-2.5 px-3 text-right">ACTIONS</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-[#1f1b22]">
+                    <tbody className="divide-y divide-[#262626]">
                       {scans.map((scan) => (
                         <tr
                           key={scan.id}
-                          className="hover:bg-[#16161e] transition-colors cursor-pointer"
-                          onClick={() => {
-                            setSelectedScanModalId(scan.id);
-                          }}
+                          className="hover:bg-[#141414] transition-colors cursor-pointer"
+                          onClick={() => setSelectedScanModalId(scan.id)}
                         >
-                          <td className="py-3 px-3 font-mono font-bold text-white">#{scan.id}</td>
-                          <td className="py-3 px-3 text-slate-200 font-medium">{scan.target_name || `Target #${scan.target_id}`}</td>
-                          <td className="py-3 px-3">
-                            <span className="px-1.5 py-0.5 rounded text-[10px] font-mono border bg-emerald-950/60 text-emerald-400 border-emerald-800/40">
-                              HARDENED
-                            </span>
+                          <td className="py-3 px-3 font-bold text-white">#{scan.id}</td>
+                          <td className="py-3 px-3 text-white">
+                            {scan.target_name || `Target #${scan.target_id}`}
                           </td>
                           <td className="py-3 px-3">
-                            <span className={`font-mono text-[11px] ${
-                              scan.status === 'COMPLETED'
-                                ? 'text-emerald-400'
-                                : scan.status === 'RUNNING'
-                                ? 'text-sky-400 animate-pulse'
-                                : 'text-rose-400'
-                            }`}>
+                            <span
+                              className={`text-[11px] ${
+                                scan.status === 'COMPLETED'
+                                  ? 'text-white'
+                                  : scan.status === 'RUNNING'
+                                  ? 'text-orange-400 font-semibold'
+                                  : 'text-[#737373]'
+                              }`}
+                            >
                               {scan.status}
                             </span>
                           </td>
-                          <td className="py-3 px-3 font-mono">
+                          <td className="py-3 px-3">
                             {scan.confirmed_count > 0 ? (
-                              <span className="text-rose-400 font-bold bg-rose-950/40 px-2 py-0.5 rounded border border-rose-800/30">
+                              <span className="text-orange-400 font-semibold">
                                 {scan.confirmed_count} Breach{scan.confirmed_count > 1 ? 'es' : ''}
                               </span>
                             ) : (
-                              <span className="text-emerald-400">0 Breaches</span>
+                              <span className="text-[#a3a3a3]">0 Breaches</span>
                             )}
                           </td>
-                          <td className="py-3 px-3 font-mono">
-                            <span className="text-slate-300 font-bold">{scan.overall_score ?? '—'}</span>
-                            {scan.risk_grade && (
-                              <span className="ml-1 text-slate-500 font-normal">({scan.risk_grade})</span>
-                            )}
+                          <td className="py-3 px-3 text-white font-bold">
+                            {scan.overall_score ?? '—'}
                           </td>
-                          <td className="py-3 px-3 font-mono text-[11px] text-slate-400">
+                          <td className="py-3 px-3 text-[11px] text-[#737373]">
                             {scan.started_at ? new Date(scan.started_at).toLocaleTimeString() : '—'}
                           </td>
                           <td className="py-3 px-3 text-right" onClick={(e) => e.stopPropagation()}>
                             <div className="flex items-center justify-end space-x-2">
+                              {scan.status === 'RUNNING' && (
+                                <button
+                                  onClick={(e) => handleStopScan(scan.id, e)}
+                                  className="px-2 py-1 rounded text-[11px] bg-black hover:bg-[#141414] text-orange-400 border border-orange-500/40 font-semibold transition-colors"
+                                  title="Stop running scan"
+                                >
+                                  Stop
+                                </button>
+                              )}
                               <button
-                                onClick={() => {
-                                  setSelectedScanModalId(scan.id);
-                                }}
-                                className="px-2.5 py-1 rounded text-[11px] font-mono bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-800/40 transition-colors flex items-center space-x-1"
+                                onClick={() => setSelectedScanModalId(scan.id)}
+                                className="px-2.5 py-1 rounded text-[11px] bg-[#141414] hover:bg-[#1a1a1a] text-orange-400 border border-orange-500/30 transition-colors"
                               >
-                                <span>🔍</span>
-                                <span>View Details</span>
+                                View Details
                               </button>
                               <a
                                 href={`/api/scans/${scan.id}/export/html`}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="px-2 py-1 rounded text-[11px] font-mono bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-300 border border-emerald-800/40 transition-colors"
-                                title="View Executive HTML Report"
+                                className="px-2 py-1 rounded text-[11px] bg-black hover:bg-[#141414] text-white border border-[#262626] transition-colors"
                               >
                                 HTML
                               </a>
@@ -439,11 +464,17 @@ export const DashboardPage: React.FC = () => {
                                 href={`/api/scans/${scan.id}/export/pdf`}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="px-2 py-1 rounded text-[11px] font-mono bg-[#1f1b22] hover:bg-slate-700 text-slate-300 transition-colors"
-                                title="Download Boardroom PDF"
+                                className="px-2 py-1 rounded text-[11px] bg-black hover:bg-[#141414] text-[#a3a3a3] hover:text-white border border-[#262626] transition-colors"
                               >
                                 PDF
                               </a>
+                              <button
+                                onClick={(e) => handleDeleteScan(scan.id, e)}
+                                className="px-2 py-1 rounded text-[11px] bg-black hover:bg-[#141414] text-[#737373] hover:text-white border border-[#262626] transition-colors"
+                                title="Delete scan record"
+                              >
+                                Delete
+                              </button>
                             </div>
                           </td>
                         </tr>
@@ -456,134 +487,116 @@ export const DashboardPage: React.FC = () => {
           </>
         )}
 
-        {/* TAB 2: DEDICATED TARGETS SUBSTRATE PAGE ("can we see targets") */}
+        {/* TAB 2: TARGETS SUBSTRATE */}
         {activeTab === 'targets' && (
           <div className="space-y-6">
-            <div className="flex items-center justify-between border-b border-[#1f1b22] pb-4">
+            <div className="flex items-center justify-between border-b border-[#262626] pb-4">
               <div>
-                <h2 className="text-base font-bold text-white tracking-wide uppercase flex items-center space-x-2">
-                  <span>🎯</span>
-                  <span>Registered AI Targets Substrate</span>
+                <h2 className="text-sm font-bold text-white uppercase tracking-widest font-mono">
+                  Registered Targets
                 </h2>
-                <p className="text-xs text-slate-400 mt-1">
-                  Inspect active models, verify endpoint connectivity, explore knowledge base documents, and test directly in the interactive sandbox.
+                <p className="text-xs text-[#a3a3a3] mt-1 font-mono">
+                  Configured targets available for adversarial evaluation.
                 </p>
               </div>
               <div className="flex items-center space-x-2">
                 <button
-                  onClick={refreshTargets}
-                  className="px-3 py-1.5 rounded-lg text-xs font-mono bg-[#16161e] border border-[#2b2733] text-slate-300 hover:text-white transition-colors"
+                  onClick={() => setOnboardModalOpen(true)}
+                  className="px-3.5 py-1.5 rounded text-xs font-semibold bg-orange-500 hover:bg-orange-600 text-black font-mono transition-colors"
                 >
-                  ⟳ Refresh Targets
+                  + Onboard Target
+                </button>
+                <button
+                  onClick={refreshTargets}
+                  className="px-3 py-1.5 rounded text-xs font-mono bg-[#141414] border border-[#262626] text-[#a3a3a3] hover:text-white transition-colors"
+                >
+                  Refresh
                 </button>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {visibleTargets.map((tgt) => {
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {targets.map((tgt) => {
                 const caps: any = tgt.capabilities || {};
-                const hasRag = Boolean(caps.rag || tgt.target_type === 'INTERNAL_RAG' || tgt.base_url.includes('internal-rag'));
+                const isSelected = selectedTargetId === tgt.id;
 
                 return (
                   <div
                     key={tgt.id}
-                    className="bg-[#111116] border border-[#1f1b22] rounded-xl p-5 space-y-4 hover:border-slate-700 transition-all flex flex-col justify-between"
+                    className="bg-[#0a0a0a] border border-[#262626] rounded-lg p-5 space-y-4 hover:border-[#404040] transition-colors flex flex-col justify-between"
                   >
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-2">
-                          <span className="font-extrabold text-sm text-white">#{tgt.id} {tgt.name}</span>
-                        </div>
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-indigo-950 text-indigo-400 border border-indigo-800/40">
+                        <span className="font-bold text-sm text-white font-mono">
+                          #{tgt.id} {tgt.name}
+                        </span>
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#141414] text-[#a3a3a3] border border-[#262626]">
                           {tgt.target_type || 'AGENT'}
                         </span>
                       </div>
 
-                      <div className="p-3 rounded-lg bg-[#070709] border border-[#1b1922] space-y-1.5 text-xs font-mono">
+                      <div className="p-3 rounded bg-black border border-[#262626] space-y-1.5 text-xs font-mono">
                         <div className="flex justify-between">
-                          <span className="text-slate-500">Base Endpoint:</span>
-                          <span className="text-slate-300 truncate max-w-[220px]">{tgt.base_url}</span>
+                          <span className="text-[#737373]">Endpoint:</span>
+                          <span className="text-white truncate max-w-[240px]">{tgt.base_url}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-slate-500">Target Model:</span>
-                          <span className="text-white font-semibold">{tgt.model_name || 'qwen-flash'}</span>
+                          <span className="text-[#737373]">Model:</span>
+                          <span className="text-white">{tgt.model_name || 'default'}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-slate-500">Operating Mode:</span>
-                          <span className="text-emerald-400">{tgt.target_mode || 'INSTRUMENTED'}</span>
+                          <span className="text-[#737373]">Mode:</span>
+                          <span className="text-white">{tgt.target_mode || 'INSTRUMENTED'}</span>
                         </div>
                       </div>
 
-                      {/* Capabilities Matrix */}
-                      <div>
-                        <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider block mb-1.5">
-                          Capabilities & Architecture
-                        </span>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                          <div className="p-2 rounded bg-[#0d0d14] border border-[#1f1b25] text-center">
-                            <span className="text-xs block">💬</span>
-                            <span className="text-[10px] font-mono font-bold text-emerald-400">CHAT</span>
-                          </div>
-                          <div className={`p-2 rounded border text-center ${
-                            hasRag ? 'bg-indigo-950/30 border-indigo-800/40 text-indigo-300' : 'bg-[#0d0d14] border-[#1f1b25] text-slate-600'
-                          }`}>
-                            <span className="text-xs block">📚</span>
-                            <span className="text-[10px] font-mono font-bold">{hasRag ? 'RAG ON' : 'NO RAG'}</span>
-                          </div>
-                          <div className={`p-2 rounded border text-center ${
-                            caps.tools ? 'bg-amber-950/30 border-amber-800/40 text-amber-300' : 'bg-[#0d0d14] border-[#1f1b25] text-slate-600'
-                          }`}>
-                            <span className="text-xs block">🛠️</span>
-                            <span className="text-[10px] font-mono font-bold">{caps.tools ? 'TOOLS' : 'NO TOOLS'}</span>
-                          </div>
-                          <div className={`p-2 rounded border text-center ${
-                            caps.data_access ? 'bg-rose-950/30 border-rose-800/40 text-rose-300' : 'bg-[#0d0d14] border-[#1f1b25] text-slate-600'
-                          }`}>
-                            <span className="text-xs block">🗄️</span>
-                            <span className="text-[10px] font-mono font-bold">{caps.data_access ? 'DATABASE' : 'NO DB'}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Security Baseline */}
-                      <div className="p-2.5 rounded-lg bg-[#070709] border border-[#1b1922] text-xs font-mono flex items-center justify-between">
-                        <span className="text-slate-400">Security Posture:</span>
-                        <span className="text-emerald-400 font-semibold">PRODUCTION HARDENED</span>
+                      {/* Capabilities */}
+                      <div className="flex flex-wrap gap-1.5 font-mono text-[10px]">
+                        {caps.chat !== false && (
+                          <span className="px-2 py-0.5 rounded bg-[#141414] text-white border border-[#262626]">
+                            CHAT
+                          </span>
+                        )}
+                        {caps.rag && (
+                          <span className="px-2 py-0.5 rounded bg-orange-950/20 text-orange-400 border border-orange-500/30">
+                            RAG
+                          </span>
+                        )}
+                        {caps.tools && (
+                          <span className="px-2 py-0.5 rounded bg-orange-950/20 text-orange-400 border border-orange-500/30">
+                            {caps.tool_names?.length ? `${caps.tool_names.length} TOOLS` : 'TOOLS'}
+                          </span>
+                        )}
+                        {caps.data_access && (
+                          <span className="px-2 py-0.5 rounded bg-orange-950/20 text-orange-400 border border-orange-500/30">
+                            DATABASE
+                          </span>
+                        )}
                       </div>
                     </div>
 
-                    <div className="pt-3 border-t border-[#1f1b22] flex flex-wrap items-center justify-between gap-2">
-                      {tgt.base_url.startsWith('http') && !tgt.base_url.includes('127.0.0.1') && !tgt.base_url.includes('localhost') ? (
-                        <a
-                          href={tgt.base_url.replace(/\/+$/, '') + '/'}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="px-3 py-1.5 rounded-lg text-xs font-mono bg-[#16161e] hover:bg-[#20202c] border border-[#2b2733] text-slate-300 hover:text-white transition-colors"
-                        >
-                          Open URL ↗
-                        </a>
-                      ) : (
-                        <span className="text-[11px] font-mono text-slate-500">Local Service</span>
-                      )}
+                    <div className="pt-3 border-t border-[#262626] flex items-center justify-between gap-2">
+                      <button
+                        onClick={() => setInspectingTarget(tgt)}
+                        className="text-xs font-mono text-orange-400 hover:text-orange-300 transition-colors"
+                      >
+                        Inspect &amp; Sandbox &rarr;
+                      </button>
 
-                      <div className="flex items-center space-x-2">
-                        <button
-                          onClick={() => setInspectingTarget(tgt)}
-                          className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition-colors shadow-sm"
-                        >
-                          🔍 Inspect & Sandbox
-                        </button>
-                        <button
-                          onClick={() => {
-                            setSelectedTargetId(tgt.id);
-                            setActiveTab('dashboard');
-                            toast.success(`Selected Target #${tgt.id} for assessment`);
-                          }}
-                          className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-600 hover:bg-rose-500 text-white transition-colors shadow-sm"
-                        >
-                          Run Scan
-                        </button>
-                      </div>
+                      <button
+                        onClick={() => {
+                          setSelectedTargetId(tgt.id);
+                          setActiveTab('dashboard');
+                          toast.success(`Selected Target #${tgt.id}`);
+                        }}
+                        className={`px-3 py-1.5 rounded text-xs font-mono font-semibold transition-colors ${
+                          isSelected
+                            ? 'bg-orange-500 text-black'
+                            : 'bg-[#141414] hover:bg-[#1a1a1a] text-white border border-[#262626]'
+                        }`}
+                      >
+                        {isSelected ? 'Active Target' : 'Select Target'}
+                      </button>
                     </div>
                   </div>
                 );
@@ -592,102 +605,115 @@ export const DashboardPage: React.FC = () => {
           </div>
         )}
 
-        {/* TAB 3: SCANS HISTORY PAGE */}
+        {/* TAB 3: DIFFERENTIAL AUTH MATRIX */}
+        {activeTab === 'diff_auth' && (
+          <div className="space-y-6">
+            <div className="border-b border-[#262626] pb-4">
+              <h2 className="text-sm font-bold text-white uppercase tracking-widest font-mono">
+                Differential Authorization Matrix
+              </h2>
+              <p className="text-xs text-[#a3a3a3] mt-1 font-mono">
+                Evaluates cross-tenant and role-boundary authorization directly against the target.
+              </p>
+            </div>
+            <DifferentialAuthMatrixViewer />
+          </div>
+        )}
+
+        {/* TAB 4: SCANS HISTORY */}
         {activeTab === 'history' && (
           <div className="space-y-6">
-            <div className="flex items-center justify-between border-b border-[#1f1b22] pb-4">
+            <div className="flex items-center justify-between border-b border-[#262626] pb-4">
               <div>
-                <h2 className="text-base font-bold text-white tracking-wide uppercase flex items-center space-x-2">
-                  <span>📋</span>
-                  <span>Security Audit Log & Scan Archive</span>
+                <h2 className="text-sm font-bold text-white uppercase tracking-widest font-mono">
+                  Scan History
                 </h2>
-                <p className="text-xs text-slate-400 mt-1">
-                  Full historical records of adversarial simulations, cryptographic findings, and executive PDF reports.
+                <p className="text-xs text-[#a3a3a3] mt-1 font-mono">
+                  Historical security audit records and exportable reports.
                 </p>
               </div>
               <button
                 onClick={refreshScans}
-                className="px-3 py-1.5 rounded-lg text-xs font-mono bg-[#16161e] border border-[#2b2733] text-slate-300 hover:text-white transition-colors"
+                className="px-3 py-1.5 rounded text-xs font-mono bg-[#141414] border border-[#262626] text-[#a3a3a3] hover:text-white transition-colors"
               >
-                ⟳ Refresh Scans
+                Refresh
               </button>
             </div>
 
-            <div className="bg-[#111116] border border-[#1f1b22] rounded-xl overflow-hidden">
-              <table className="w-full text-left text-xs">
+            <div className="bg-[#0a0a0a] border border-[#262626] rounded-lg overflow-hidden">
+              <table className="w-full text-left text-xs font-mono">
                 <thead>
-                  <tr className="border-b border-[#1f1b22] bg-[#0c0c10] text-slate-400 font-mono text-[11px]">
+                  <tr className="border-b border-[#262626] bg-black text-[#a3a3a3] text-[11px]">
                     <th className="py-3 px-4">SCAN ID</th>
                     <th className="py-3 px-4">TARGET</th>
-                    <th className="py-3 px-4">MODE</th>
                     <th className="py-3 px-4">STATUS</th>
                     <th className="py-3 px-4">BREACHES</th>
-                    <th className="py-3 px-4">RISK SCORE</th>
+                    <th className="py-3 px-4">SCORE</th>
                     <th className="py-3 px-4">STARTED AT</th>
                     <th className="py-3 px-4 text-right">ACTIONS</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#1f1b22]">
+                <tbody className="divide-y divide-[#262626]">
                   {scans.map((scan) => (
                     <tr
                       key={scan.id}
-                      className="hover:bg-[#16161e] transition-colors cursor-pointer"
-                      onClick={() => {
-                        setSelectedScanModalId(scan.id);
-                      }}
+                      className="hover:bg-[#141414] transition-colors cursor-pointer"
+                      onClick={() => setSelectedScanModalId(scan.id)}
                     >
-                      <td className="py-3.5 px-4 font-mono font-bold text-white">#{scan.id}</td>
-                      <td className="py-3.5 px-4 text-slate-200 font-medium">{scan.target_name || `Target #${scan.target_id}`}</td>
-                      <td className="py-3.5 px-4">
-                        <span className="px-2 py-0.5 rounded text-[10px] font-mono border bg-emerald-950/60 text-emerald-400 border-emerald-800/40">
-                          HARDENED
-                        </span>
+                      <td className="py-3.5 px-4 font-bold text-white">#{scan.id}</td>
+                      <td className="py-3.5 px-4 text-white">
+                        {scan.target_name || `Target #${scan.target_id}`}
                       </td>
                       <td className="py-3.5 px-4">
-                        <span className={`font-mono text-xs ${
-                          scan.status === 'COMPLETED'
-                            ? 'text-emerald-400'
-                            : scan.status === 'RUNNING'
-                            ? 'text-sky-400 animate-pulse'
-                            : 'text-rose-400'
-                        }`}>
+                        <span
+                          className={`text-xs ${
+                            scan.status === 'COMPLETED'
+                              ? 'text-white'
+                              : scan.status === 'RUNNING'
+                              ? 'text-orange-400 font-semibold'
+                              : 'text-[#737373]'
+                          }`}
+                        >
                           {scan.status}
                         </span>
                       </td>
-                      <td className="py-3.5 px-4 font-mono">
+                      <td className="py-3.5 px-4">
                         {scan.confirmed_count > 0 ? (
-                          <span className="text-rose-400 font-bold bg-rose-950/40 px-2 py-0.5 rounded border border-rose-800/30">
+                          <span className="text-orange-400 font-bold">
                             {scan.confirmed_count} Breach{scan.confirmed_count > 1 ? 'es' : ''}
                           </span>
                         ) : (
-                          <span className="text-emerald-400">0 Breaches</span>
+                          <span className="text-[#a3a3a3]">0 Breaches</span>
                         )}
                       </td>
-                      <td className="py-3.5 px-4 font-mono">
-                        <span className="text-white font-bold">{scan.overall_score ?? '—'}</span>
-                        {scan.risk_grade && (
-                          <span className="ml-1 text-slate-400">({scan.risk_grade})</span>
-                        )}
+                      <td className="py-3.5 px-4 text-white font-bold">
+                        {scan.overall_score ?? '—'}
                       </td>
-                      <td className="py-3.5 px-4 font-mono text-[11px] text-slate-400">
+                      <td className="py-3.5 px-4 text-[11px] text-[#737373]">
                         {scan.started_at ? new Date(scan.started_at).toLocaleString() : '—'}
                       </td>
                       <td className="py-3.5 px-4 text-right" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end space-x-2">
+                          {scan.status === 'RUNNING' && (
+                            <button
+                              onClick={(e) => handleStopScan(scan.id, e)}
+                              className="px-2.5 py-1 rounded text-xs bg-black hover:bg-[#141414] text-orange-400 border border-orange-500/40 font-semibold transition-colors"
+                              title="Stop running scan"
+                            >
+                              Stop
+                            </button>
+                          )}
                           <button
-                            onClick={() => {
-                              setSelectedScanModalId(scan.id);
-                            }}
-                            className="px-3 py-1 rounded text-xs font-mono bg-rose-600 hover:bg-rose-500 text-white transition-colors"
+                            onClick={() => setSelectedScanModalId(scan.id)}
+                            className="px-3 py-1 rounded text-xs bg-orange-500 hover:bg-orange-600 text-black font-semibold transition-colors"
                           >
-                            Inspect & Audit
+                            Inspect
                           </button>
                           <a
                             href={`/api/scans/${scan.id}/export/html`}
                             target="_blank"
                             rel="noreferrer"
-                            className="px-2.5 py-1 rounded text-xs font-mono bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-300 border border-emerald-800/40 transition-colors"
-                            title="View Executive HTML Report"
+                            className="px-2.5 py-1 rounded text-xs bg-black hover:bg-[#141414] text-white border border-[#262626] transition-colors"
                           >
                             HTML
                           </a>
@@ -695,11 +721,17 @@ export const DashboardPage: React.FC = () => {
                             href={`/api/scans/${scan.id}/export/pdf`}
                             target="_blank"
                             rel="noreferrer"
-                            className="px-2.5 py-1 rounded text-xs font-mono bg-[#1e1c26] hover:bg-slate-700 text-slate-300 transition-colors"
-                            title="Download Boardroom PDF"
+                            className="px-2.5 py-1 rounded text-xs bg-black hover:bg-[#141414] text-[#a3a3a3] hover:text-white border border-[#262626] transition-colors"
                           >
                             PDF
                           </a>
+                          <button
+                            onClick={(e) => handleDeleteScan(scan.id, e)}
+                            className="px-2.5 py-1 rounded text-xs bg-black hover:bg-[#141414] text-[#737373] hover:text-white border border-[#262626] transition-colors"
+                            title="Delete scan record"
+                          >
+                            Delete
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -710,7 +742,7 @@ export const DashboardPage: React.FC = () => {
           </div>
         )}
 
-        {/* Scan Inspector Modal */}
+        {/* Modals */}
         <ScanInspectorModal
           scanId={selectedScanModalId}
           onClose={() => setSelectedScanModalId(null)}
@@ -721,17 +753,21 @@ export const DashboardPage: React.FC = () => {
           }}
         />
 
-        {/* Target Inspector Modal */}
         <TargetInspectorModal
           target={inspectingTarget}
           onClose={() => setInspectingTarget(null)}
           onSelectForScan={(tgtId) => {
             setSelectedTargetId(tgtId);
             setActiveTab('dashboard');
-            toast.success(`Target #${tgtId} selected for assessment`);
+            toast.success(`Target #${tgtId} selected`);
           }}
         />
 
+        <OnboardTargetModal
+          isOpen={onboardModalOpen}
+          onClose={() => setOnboardModalOpen(false)}
+          onTargetCreated={refreshTargets}
+        />
       </main>
     </div>
   );

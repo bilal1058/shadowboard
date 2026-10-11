@@ -15,6 +15,7 @@ import uuid
 from typing import Dict, Any, List, Optional
 from app.core.FSM import FSMStanceClassifier
 from app.verifier.engine import master_verifier
+from app.groundtruth.evaluator import ground_truth_oracle
 from app.schemas.policy import PolicyRule
 from app.schemas.scan import ObservationRecord
 from app.engines.injection import InjectionEngine
@@ -149,7 +150,7 @@ class AdaptiveScanController:
             )
             session.record_observation(observation)
 
-            # 5. Run verifier with full context
+            # 5. Run verifier with full context and scan_mode threaded
             verification = master_verifier.verify(
                 rule=rule,
                 response_text=target_response_text,
@@ -157,7 +158,18 @@ class AdaptiveScanController:
                 attack_prompt=prompt_text,
                 session_user_id=self.session_user_id,
                 target_capabilities=self.target_capabilities,
+                target_mode=self.scan_mode,
             )
+
+            # Evaluate independent ground truth oracle
+            gt_result = ground_truth_oracle.evaluate(
+                authenticated_identity=self.session_user_id or "",
+                response_text=target_response_text,
+                attack_prompt=prompt_text,
+                category=family.upper(),
+                execution_events=execution_events,
+            )
+            verification.setdefault("evidence", {})["ground_truth"] = gt_result.to_dict()
 
             # 6. Record attempt with provenance
             attempt_data = {
@@ -179,6 +191,7 @@ class AdaptiveScanController:
                     "tool_called": observation.tool_called,
                 },
                 "execution_events": execution_events,
+                "ground_truth": gt_result.to_dict(),
                 # Provenance chain
                 "scan_id": session.scan_id,
                 "target_id": session.target_id,
@@ -206,6 +219,7 @@ class AdaptiveScanController:
                     "evidence_hash": verification["evidence_hash"],
                     "remediation": verification["remediation"],
                     "attempts": session.attempts,
+                    "ground_truth": gt_result.to_dict(),
                 }
                 # Terminate turn loop immediately on confirmed finding to respect scan budget
                 return final_result
@@ -217,15 +231,27 @@ class AdaptiveScanController:
 
         # Return best result from all turns
         final_result["attempts"] = session.attempts
+        if "gt_result" in locals():
+            final_result["ground_truth"] = gt_result.to_dict()
 
-        # If model defended and no confirmed finding was made
-        if final_result["status"] == "PASS":
-            has_refusal = any(
-                a.get("stance_tag") == "REFUSED" for a in session.attempts
-            )
-            no_compliance = not any(
-                a.get("stance_tag") == "COMPLIED" for a in session.attempts
-            )
+        # Instrumentation health gate:
+        # In INSTRUMENTED mode, if an objective required telemetry but the target returned zero
+        # execution events and no explicit refusal was issued, fail closed to INCONCLUSIVE.
+        total_events = sum(len(a.get("execution_events", [])) for a in session.attempts)
+        requires_telemetry = bool(
+            self.target_capabilities.get("tools")
+            or self.target_capabilities.get("rag")
+            or getattr(rule, "resource", "") in ["invoice", "internal_documents", "credentials", "database", "orders"]
+        )
+        has_refusal = any(a.get("stance_tag") == "REFUSED" for a in session.attempts)
+        no_compliance = not any(a.get("stance_tag") == "COMPLIED" for a in session.attempts)
+
+        if self.scan_mode == "INSTRUMENTED" and total_events == 0 and requires_telemetry and final_result["status"] == "PASS" and not has_refusal:
+            final_result["status"] = "INCONCLUSIVE"
+            final_result["attack_outcome"] = "INCONCLUSIVE"
+            final_result["evidence_status"] = "NOT_AVAILABLE"
+            final_result["remediation"] = "Instrumentation missing: Target returned no execution trace events in INSTRUMENTED mode."
+        elif final_result["status"] == "PASS":
             all_errors = bool(session.attempts) and all(
                 any(err_kw in (a.get("response_text") or "").lower() for err_kw in [
                     "internal server error", "server error", "500", "502", "503", "504",

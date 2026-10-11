@@ -657,3 +657,41 @@ def test_legacy_verification_mode_explicit_only():
     # Explicit LEGACY_V1 mode accepts the legacy 4-field payload
     valid_legacy, _, _ = StandaloneVerifier.verify_package(pkg, key_registry=reg, mode="LEGACY_V1")
     assert valid_legacy is True
+
+
+def test_unsigned_evidence_package_handling():
+    """Unsigned evidence mode must clearly distinguish hash integrity from digital authenticity."""
+    pkg = EvidenceBundler.create_package(
+        scan_id=999,
+        target_id=1,
+        target_name="Unsigned Target",
+        finding_id="FND-UNSIGNED-01",
+        rule_id="RULE-UNSIGNED",
+        rule_name="Unsigned Test",
+        severity="MEDIUM",
+        owasp_category="LLM01",
+        attack_prompts=["test probe"],
+        strategies_used=["probe"],
+        response_text="sample response",
+        execution_events=[{"event": "call_1"}],
+        violation_details={},
+        remediation_text="none",
+        unsigned=True,
+    )
+
+    pkg_data = json.loads(pkg.to_json())
+    assert pkg_data["proof"]["signature_status"] == "UNSIGNED"
+    assert pkg_data["proof"]["signature_ed25519_hex"] == ""
+
+    # In TRUSTED_SIGNER mode (default), unsigned evidence MUST fail authenticity validation
+    valid_trusted, msg_trusted, summary_trusted = StandaloneVerifier.verify_package(pkg_data, mode="TRUSTED_SIGNER")
+    assert valid_trusted is False
+    assert "UNSIGNED" in msg_trusted
+    assert summary_trusted.get("verification_status") == "UNSIGNED"
+
+    # In CRYPTOGRAPHIC_ONLY mode, event integrity is verified but authenticity is reported as UNSIGNED
+    valid_crypto, msg_crypto, summary_crypto = StandaloneVerifier.verify_package(pkg_data, mode="CRYPTOGRAPHIC_ONLY")
+    assert valid_crypto is True
+    assert summary_crypto["authenticity_status"] == "UNSIGNED"
+    assert summary_crypto["verification_status"] == "INTEGRITY_VERIFIED_UNSIGNED"
+

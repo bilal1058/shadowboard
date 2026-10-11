@@ -356,7 +356,7 @@ async def test_forward_and_observe_blocks_metadata_destination():
 # 9. Real Multi-Process End-to-End Observation & Post-Death Attestation
 # =====================================================================
 
-def test_phase8_real_subprocess_e2e():
+def test_phase8_real_subprocess_e2e(tmp_path, monkeypatch):
     """True out-of-process integration test demonstrating:
     1. Real separate target process on an ephemeral port.
     2. Real separate sidecar process (uvicorn) on another ephemeral port.
@@ -373,6 +373,8 @@ def test_phase8_real_subprocess_e2e():
     import subprocess
     import httpx
     from pathlib import Path
+    from app.evidence.key_registry import reset_key_registry, get_active_key_registry
+    from app.core.config import settings
 
     def find_free_port():
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -381,6 +383,25 @@ def test_phase8_real_subprocess_e2e():
 
     target_port = find_free_port()
     sidecar_port = find_free_port()
+
+    # Pre-generate shared signing key so both processes share the exact operator key
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    backend_dir = str(repo_root / "backend")
+    key_file = tmp_path / "shared_sidecar_key.pem"
+    shared_key_id = "subprocess-shared-key-01"
+
+    monkeypatch.setenv("SIGNING_KEY_PATH", str(key_file))
+    monkeypatch.setenv("KEY_ID", shared_key_id)
+    monkeypatch.setattr(settings, "SIGNING_KEY_PATH", str(key_file))
+    monkeypatch.setattr(settings, "KEY_ID", shared_key_id)
+    reset_key_registry()
+    # Initialize in-process registry to write key_file
+    parent_registry = get_active_key_registry()
+
+    sidecar_env = os.environ.copy()
+    sidecar_env["SIGNING_KEY_PATH"] = str(key_file)
+    sidecar_env["KEY_ID"] = shared_key_id
+    sidecar_env["PYTHONPATH"] = backend_dir
 
     # 1. Target server code (separate process)
     target_code = f"""
@@ -421,12 +442,11 @@ server = http.server.HTTPServer(('127.0.0.1', {target_port}), TargetHandler)
 server.serve_forever()
 """
 
-    repo_root = Path(__file__).resolve().parent.parent.parent
-    backend_dir = str(repo_root / "backend")
     target_proc = subprocess.Popen([sys.executable, "-c", target_code])
     sidecar_proc = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "app.sidecar.server:app", "--host", "127.0.0.1", "--port", str(sidecar_port)],
         cwd=backend_dir,
+        env=sidecar_env,
     )
 
     try:
@@ -537,3 +557,4 @@ server.serve_forever()
         if sidecar_proc.poll() is None:
             sidecar_proc.terminate()
             sidecar_proc.wait()
+        reset_key_registry()

@@ -55,7 +55,7 @@ class KeyRegistry:
         self._initialize_from_config()
 
     def _is_test_env(self) -> bool:
-        return os.getenv("APP_ENV") == "test" or "pytest" in sys.modules or "PYTEST_CURRENT_TEST" in os.environ
+        return os.getenv("APP_ENV") == "test" or os.getenv("TESTING") == "1"
 
     def _load_stored_metadata(self) -> None:
         """Loads historical public key metadata from persistent keyring file."""
@@ -81,7 +81,12 @@ class KeyRegistry:
             pass
 
     def _initialize_from_config(self) -> None:
-        """Initializes the active signing key from config or persistent storage."""
+        """Initialize the active signing key from the configured key path.
+
+        Production behavior is fail-closed: if no SIGNING_KEY_PATH is configured, the registry does
+        not silently generate a persistent default private key. In test or dev flows, an ephemeral
+        fallback key is allowed so validation code can exercise the unsigned and signing paths.
+        """
         key_id = settings.KEY_ID or "sb_key_primary"
         signing_key_path = settings.SIGNING_KEY_PATH
 
@@ -91,7 +96,6 @@ class KeyRegistry:
                 try:
                     with open(p, "rb") as f:
                         key_bytes = f.read()
-                    # Support PKCS8 PEM or raw private bytes
                     if b"BEGIN PRIVATE KEY" in key_bytes:
                         private_key = serialization.load_pem_private_key(key_bytes, password=None)
                     else:
@@ -101,7 +105,6 @@ class KeyRegistry:
                 except Exception as exc:
                     raise RuntimeError(f"Startup Failure: Configured SIGNING_KEY_PATH '{signing_key_path}' could not be loaded: {exc}")
 
-            # If path specified but file doesn't exist, create it securely
             try:
                 p.parent.mkdir(parents=True, exist_ok=True)
                 new_key = ed25519.Ed25519PrivateKey.generate()
@@ -117,40 +120,15 @@ class KeyRegistry:
             except Exception as exc:
                 raise RuntimeError(f"Startup Failure: Could not initialize key at configured SIGNING_KEY_PATH '{signing_key_path}': {exc}")
 
-        # Fallback to persistent local key directory if writable
-        default_dir = _DEFAULT_KEYS_DIR
-        default_pem = default_dir / "shadowboard_signing_key.pem"
-        if default_pem.exists():
-            try:
-                with open(default_pem, "rb") as f:
-                    pem_bytes = f.read()
-                private_key = serialization.load_pem_private_key(pem_bytes, password=None)
-                self._register_private_key(key_id, private_key, description="Persistent instance key")
-                return
-            except Exception:
-                pass
-
-        try:
-            default_dir.mkdir(parents=True, exist_ok=True)
+        if self._is_test_env() and not self._keys and not self._private_keys:
             fallback_key = ed25519.Ed25519PrivateKey.generate()
-            pem_bytes = fallback_key.private_bytes(
-                encoding=serialization.Encoding.PEM,
-                format=serialization.PrivateFormat.PKCS8,
-                encryption_algorithm=serialization.NoEncryption(),
-            )
-            with open(default_pem, "wb") as f:
-                f.write(pem_bytes)
-            self._register_private_key(key_id, fallback_key, description="Instance default persistent key")
+            self._register_private_key(key_id, fallback_key, description="Ephemeral fallback key for test/unsigned flows")
             return
-        except Exception as exc:
-            # Ephemeral in-memory key only if test/dev environment where persistent filesystem is mocked/read-only
-            if self._is_test_env() or settings.APP_ENV.lower() in ("test", "development", "dev"):
-                ephemeral_key = ed25519.Ed25519PrivateKey.generate()
-                self._register_private_key(key_id, ephemeral_key, description="Ephemeral memory key (test/dev only)")
-            else:
-                raise RuntimeError(
-                    f"Startup Failure: Persistent signing key storage unavailable in {settings.APP_ENV} environment: {exc}"
-                )
+
+        if not self._keys and not self._private_keys:
+            self._keys = {}
+            self._private_keys = {}
+            self._active_key_id = None
 
     def _register_private_key(
         self,
@@ -188,9 +166,10 @@ class KeyRegistry:
     def get_active_signing_key(self) -> Tuple[ed25519.Ed25519PrivateKey, str]:
         """Returns the active private key and its key_id for signing."""
         if not self._active_key_id or self._active_key_id not in self._private_keys:
-            # Re-initialize if missing
             self._initialize_from_config()
-        key_id = self._active_key_id or "sb_key_primary"
+        if not self._active_key_id or self._active_key_id not in self._private_keys:
+            raise RuntimeError("No signing key configured for this environment; configure SIGNING_KEY_PATH or set unsigned evidence mode.")
+        key_id = self._active_key_id
         return self._private_keys[key_id], key_id
 
     def get_active_key_id(self) -> str:
@@ -226,7 +205,6 @@ class KeyRegistry:
         record.revoked_at = time.time()
         record.revocation_reason = reason
 
-        # If active key was revoked, generate a fresh active key with collision-free UUID
         if self._active_key_id == key_id:
             new_key_id = f"sb_key_{uuid.uuid4().hex[:12]}"
             new_key = ed25519.Ed25519PrivateKey.generate()

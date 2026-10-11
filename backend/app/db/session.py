@@ -56,6 +56,12 @@ async def get_db():
             await db.executescript(schema_sql)
             await _seed_default_targets(db)
             await db.commit()
+        else:
+            t_count = await db.execute("SELECT COUNT(*) FROM targets;")
+            t_row = await t_count.fetchone()
+            if t_row and t_row[0] == 0:
+                await _seed_default_targets(db)
+                await db.commit()
         try:
             await db.execute("ALTER TABLE scan_runs ADD COLUMN tenant_matrix_json TEXT DEFAULT '[]';")
             await db.commit()

@@ -108,6 +108,15 @@ build/
 # Cloudflare Security Audit Artifacts
 security-audit/
 
-# Presentation Scratch
+# Presentation Scratch & Slide Decks (Local Only)
 .frontend-slides/
 strix_runs/
+presentation/
+presentation.zip
+backend/static/presentation/
+*.pptx
+*.ppt
+*.docx
+ShadowBoard_Presentation*
+scripts/generate_roman_urdu_guide.py
+

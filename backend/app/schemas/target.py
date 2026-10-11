@@ -13,7 +13,7 @@ class TargetContract(BaseModel):
     base_url: str
     model_name: str = "qwen-flash"
     target_type: str = "INTERNAL_RAG"
-    target_mode: Literal["INSTRUMENTED", "BLACK_BOX"] = "INSTRUMENTED"
+    target_mode: Literal["INSTRUMENTED"] = "INSTRUMENTED"
     capabilities: TargetCapabilities
 
 class TargetResponse(BaseModel):

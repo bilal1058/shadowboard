@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '@/api/client';
 import { ScanDetails, Finding, Attempt } from '@/types/api';
-import toast from 'react-hot-toast';
 
 interface ScanInspectorModalProps {
   scanId: number | null;
@@ -13,10 +12,10 @@ export const ScanInspectorModal: React.FC<ScanInspectorModalProps> = ({ scanId, 
   const [scan, setScan] = useState<ScanDetails | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'findings' | 'attempts'>('findings');
+  const [activeTab, setActiveTab] = useState<'findings' | 'trace'>('findings');
   const [expandedFindingId, setExpandedFindingId] = useState<number | null>(null);
-  const [expandedAttemptId, setExpandedAttemptId] = useState<number | null>(null);
-  const [copiedText, setCopiedText] = useState<string | null>(null);
+  const [expandedTurnId, setExpandedTurnId] = useState<number | null>(null);
+
   useEffect(() => {
     if (!scanId) return;
 
@@ -24,7 +23,6 @@ export const ScanInspectorModal: React.FC<ScanInspectorModalProps> = ({ scanId, 
     setLoading(true);
     setError(null);
 
-    // Fetch scan details
     api.get<ScanDetails>(`/scans/${scanId}`)
       .then((data) => {
         if (isMounted) {
@@ -33,7 +31,7 @@ export const ScanInspectorModal: React.FC<ScanInspectorModalProps> = ({ scanId, 
             setExpandedFindingId(data.findings[0].id);
           }
           if (data.attempts && data.attempts.length > 0) {
-            setExpandedAttemptId(data.attempts[0].id);
+            setExpandedTurnId(data.attempts[0].id);
           }
           setLoading(false);
         }
@@ -45,7 +43,6 @@ export const ScanInspectorModal: React.FC<ScanInspectorModalProps> = ({ scanId, 
         }
       });
 
-    // Also connect to SSE stream to show live / replayed events
     const es = new EventSource(`/api/scans/${scanId}/stream`);
 
     es.onmessage = (event) => {
@@ -58,7 +55,7 @@ export const ScanInspectorModal: React.FC<ScanInspectorModalProps> = ({ scanId, 
           es.close();
         }
       } catch (e) {
-        console.error('SSE JSON parse error:', e);
+        console.error('SSE parse error:', e);
       }
     };
 
@@ -74,300 +71,239 @@ export const ScanInspectorModal: React.FC<ScanInspectorModalProps> = ({ scanId, 
 
   if (!scanId) return null;
 
-  const copyToClipboard = (text: string, label: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedText(label);
-    toast.success(`Copied ${label} to clipboard`);
-    setTimeout(() => setCopiedText(null), 2000);
-  };
-
-  const handleDownloadPdf = () => {
-    const url = `/api/scans/${scanId}/export/pdf`;
-    window.open(url, '_blank');
-  };
-
-  const handleOpenExecutiveHtml = () => {
-    const url = `/api/scans/${scanId}/export/html`;
-    window.open(url, '_blank');
-  };
-
   const getSeverityBadge = (severity: string) => {
     const sev = (severity || '').toUpperCase();
-    if (sev === 'CRITICAL') {
-      return <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-950/80 text-rose-400 border border-rose-700/60">CRITICAL</span>;
+    if (sev === 'CRITICAL' || sev === 'HIGH') {
+      return (
+        <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold text-[#f97316] border border-[#f97316] bg-black">
+          {sev}
+        </span>
+      );
     }
-    if (sev === 'HIGH') {
-      return <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-orange-950/80 text-orange-400 border border-orange-700/60">HIGH</span>;
-    }
-    if (sev === 'MEDIUM') {
-      return <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-950/80 text-amber-400 border border-amber-700/60">MEDIUM</span>;
-    }
-    return <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700">LOW</span>;
+    return (
+      <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold text-white border border-[#333333] bg-[#121212]">
+        {sev}
+      </span>
+    );
   };
 
   const getStanceBadge = (stance: string) => {
     const s = (stance || '').toUpperCase();
     if (s === 'COMPLIED') {
-      return <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-950/80 text-rose-400 border border-rose-700/60">COMPLIED (VULNERABLE)</span>;
+      return (
+        <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold text-[#f97316] border border-[#f97316] bg-black">
+          BREACH (COMPLIED)
+        </span>
+      );
     }
     if (s === 'REFUSED') {
-      return <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-950/80 text-emerald-400 border border-emerald-700/60">REFUSED (DEFENDED)</span>;
+      return (
+        <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold text-white border border-[#333333] bg-[#121212]">
+          DEFENDED (REFUSED)
+        </span>
+      );
     }
-    if (s === 'ERROR') {
-      return <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-800 text-amber-400 border border-amber-800/60">TARGET ERROR (NO BREACH)</span>;
-    }
-    if (s === 'EVASIVE' || s === 'INCONCLUSIVE') {
-      return <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700">{s}</span>;
-    }
-    return <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-950/80 text-amber-400 border border-amber-700/60">{s === 'PARTIAL' ? 'EVALUATED' : (s || 'EVALUATED')}</span>;
+    return (
+      <span className="px-2 py-0.5 rounded text-[10px] font-mono text-[#a3a3a3] border border-[#262626]">
+        {s || 'EVALUATED'}
+      </span>
+    );
   };
 
+  const findingsCount = scan?.findings?.length ?? 0;
+  const attemptsCount = scan?.attempts?.length ?? 0;
+
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50 p-4 sm:p-6 overflow-y-auto animate-fadeIn">
-      <div className="bg-[#0f0f15] border border-[#2b2733] rounded-2xl w-full max-w-5xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
-        {/* Modal Header */}
-        <div className="p-5 bg-[#14141d] border-b border-[#23202b] flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-rose-600 to-rose-900 flex items-center justify-center text-xl shadow-lg shadow-rose-950/50">
-              🔍
+    <div className="fixed inset-0 bg-black/85 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-[#0a0a0a] border border-[#262626] rounded-lg w-full max-w-5xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden font-sans">
+        
+        {/* Header */}
+        <div className="p-4 bg-black border-b border-[#262626] flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center space-x-3">
+              <h2 className="text-sm font-bold text-white uppercase tracking-wider font-mono">
+                Scan #{scanId}
+              </h2>
+              {scan && (
+                <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+                  scan.status === 'COMPLETED'
+                    ? 'text-white border border-[#333333] bg-[#121212]'
+                    : scan.status === 'RUNNING'
+                    ? 'text-[#f97316] border border-[#f97316] bg-black animate-pulse'
+                    : 'text-[#f97316] border border-[#f97316] bg-black'
+                }`}>
+                  {scan.status}
+                </span>
+              )}
             </div>
-            <div>
-              <div className="flex items-center space-x-2">
-                <h2 className="text-base font-bold text-white tracking-wide">
-                  Assessment Run #{scanId}
-                </h2>
-                {scan && (
-                  <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold ${
-                    scan.status === 'COMPLETED'
-                      ? 'bg-emerald-950/70 text-emerald-400 border border-emerald-800/40'
-                      : scan.status === 'RUNNING'
-                      ? 'bg-sky-950/70 text-sky-400 border border-sky-800/40 animate-pulse'
-                      : 'bg-rose-950/70 text-rose-400 border border-rose-800/40'
-                  }`}>
-                    {scan.status}
-                  </span>
-                )}
-                {scan && (
-                  <span className="px-2 py-0.5 rounded text-[10px] font-mono border bg-emerald-950/60 text-emerald-400 border-emerald-800/40">
-                    PROTECTED (HARDENED)
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-slate-400 mt-0.5 font-mono">
-                Target: <span className="text-slate-200 font-semibold">{scan?.target_name || `Target #${scan?.target_id}`}</span>
-                {scan?.started_at && ` • Started: ${new Date(scan.started_at).toLocaleString()}`}
-              </p>
-            </div>
+            <p className="text-xs text-[#a3a3a3] mt-0.5 font-mono">
+              Target: <span className="text-white font-semibold">{scan?.target_name || `Target #${scan?.target_id}`}</span>
+            </p>
           </div>
 
           <div className="flex items-center space-x-2">
             {onRerunScan && scan && (
               <button
                 onClick={() => onRerunScan(scan.target_id, scan.mitigation_enabled)}
-                className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-rose-600 hover:bg-rose-500 text-white transition-colors flex items-center space-x-1.5 shadow-sm"
-                title="Launch re-run of this security assessment"
+                className="px-3.5 py-1.5 rounded text-xs font-mono font-bold bg-[#f97316] hover:bg-[#ea580c] text-black transition-colors"
               >
-                <span>⚡</span>
-                <span>Re-run Assessment</span>
+                Re-run Scan
               </button>
             )}
-            <button
-              onClick={handleOpenExecutiveHtml}
-              className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-600/60 text-emerald-300 transition-colors flex items-center space-x-1.5 shadow-sm"
-              title="Open boardroom-ready Executive HTML report with charts & remediation"
+            <a
+              href={`/api/scans/${scanId}/export/html`}
+              target="_blank"
+              rel="noreferrer"
+              className="px-3 py-1.5 rounded text-xs font-mono text-white border border-[#333333] hover:border-[#f97316] transition-colors"
             >
-              <span>📊</span>
-              <span>Executive HTML</span>
-            </button>
-            <button
-              onClick={handleDownloadPdf}
-              className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-[#1a1a24] hover:bg-[#252533] border border-[#332f3f] text-slate-200 transition-colors flex items-center space-x-1.5 shadow-sm"
-              title="Download boardroom-ready cryptographic verification report"
+              HTML Report
+            </a>
+            <a
+              href={`/api/scans/${scanId}/export/pdf`}
+              target="_blank"
+              rel="noreferrer"
+              className="px-3 py-1.5 rounded text-xs font-mono text-white border border-[#333333] hover:border-[#f97316] transition-colors"
             >
-              <span>📄</span>
-              <span>Boardroom PDF</span>
-            </button>
+              PDF Report
+            </a>
             <button
               onClick={onClose}
-              className="w-8 h-8 rounded-lg bg-[#1a1a24] hover:bg-[#252533] border border-[#332f3f] text-slate-400 hover:text-white flex items-center justify-center transition-colors text-sm"
+              className="w-8 h-8 rounded border border-[#262626] text-[#a3a3a3] hover:text-white flex items-center justify-center transition-colors text-xs font-mono"
             >
               ✕
             </button>
           </div>
         </div>
 
-        {/* Score & Metric Summary Bar */}
+        {/* 3 Metric Score Bar */}
         {scan && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 divide-[#23202b] bg-[#111118] border-b border-[#23202b] text-center">
+          <div className="grid grid-cols-3 divide-x divide-[#262626] bg-[#000000] border-b border-[#262626] text-center font-mono">
             <div className="p-3">
-              <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block">Security Score</span>
-              <div className="flex items-baseline justify-center space-x-1 mt-0.5">
-                <span className="text-xl font-black font-mono text-white">{scan.overall_score ?? '—'}</span>
-                <span className="text-xs font-mono text-slate-500">/ 100</span>
-                {scan.risk_grade && (
-                  <span className={`ml-1 text-xs font-bold font-mono px-1.5 py-0.2 rounded ${
-                    scan.risk_grade === 'A' ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' :
-                    scan.risk_grade === 'B' ? 'bg-sky-950 text-sky-400 border border-sky-800' :
-                    scan.risk_grade === 'C' ? 'bg-amber-950 text-amber-400 border border-amber-800' :
-                    'bg-rose-950 text-rose-400 border border-rose-800'
-                  }`}>
-                    Grade {scan.risk_grade}
-                  </span>
-                )}
-              </div>
+              <span className="text-[10px] text-[#737373] uppercase tracking-wider block">Security Score</span>
+              <span className="text-lg font-bold text-white mt-0.5 block">{scan.overall_score ?? '—'}/100</span>
             </div>
-
             <div className="p-3">
-              <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block">Confirmed Breaches</span>
-              <div className="mt-0.5">
-                {scan.confirmed_count > 0 ? (
-                  <span className="text-base font-bold font-mono text-rose-400">
-                    {scan.confirmed_count} Confirmed
-                  </span>
-                ) : (
-                  <span className="text-base font-bold font-mono text-emerald-400">
-                    0 Confirmed
-                  </span>
-                )}
-              </div>
-            </div>
-
-            <div className="p-3">
-              <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block">Objectives Tested</span>
-              <span className="text-base font-bold font-mono text-slate-200 mt-0.5 block">
-                {scan.objectives_tested ?? scan.objectives?.length ?? 0}
+              <span className="text-[10px] text-[#737373] uppercase tracking-wider block">Confirmed Breaches</span>
+              <span className={`text-lg font-bold mt-0.5 block ${scan.confirmed_count > 0 ? 'text-[#f97316]' : 'text-white'}`}>
+                {scan.confirmed_count}
               </span>
             </div>
-
             <div className="p-3">
-              <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block">Policy Coverage</span>
-              <span className="text-base font-bold font-mono text-emerald-400 mt-0.5 block">
-                {scan.policy_coverage ? `${scan.policy_coverage}%` : '100%'}
+              <span className="text-[10px] text-[#737373] uppercase tracking-wider block">Execution Turns</span>
+              <span className="text-lg font-bold text-white mt-0.5 block">
+                {attemptsCount}
               </span>
             </div>
           </div>
         )}
 
-        {/* Modal Navigation Tabs */}
-        <div className="flex border-b border-[#23202b] bg-[#12121a] px-5">
+        {/* Just Two Clear Tabs */}
+        <div className="flex border-b border-[#262626] bg-[#0a0a0a] px-4 gap-2 font-mono text-xs">
           <button
             onClick={() => setActiveTab('findings')}
-            className={`py-3 px-4 text-xs font-semibold border-b-2 transition-all flex items-center space-x-2 ${
+            className={`py-2.5 px-4 font-bold border-b-2 transition-all ${
               activeTab === 'findings'
-                ? 'border-rose-500 text-rose-400 bg-rose-950/10'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
+                ? 'border-[#f97316] text-[#f97316]'
+                : 'border-transparent text-[#737373] hover:text-white'
             }`}
           >
-            <span>🚨</span>
-            <span>Confirmed Breaches & Findings ({scan?.findings?.length ?? 0})</span>
+            Findings ({findingsCount})
           </button>
-
           <button
-            onClick={() => setActiveTab('attempts')}
-            className={`py-3 px-4 text-xs font-semibold border-b-2 transition-all flex items-center space-x-2 ${
-              activeTab === 'attempts'
-                ? 'border-rose-500 text-rose-400 bg-rose-950/10'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
+            onClick={() => setActiveTab('trace')}
+            className={`py-2.5 px-4 font-bold border-b-2 transition-all ${
+              activeTab === 'trace'
+                ? 'border-[#f97316] text-[#f97316]'
+                : 'border-transparent text-[#737373] hover:text-white'
             }`}
           >
-            <span>🎯</span>
-            <span>Adversarial Prompts & Responses ({scan?.attempts?.length ?? 0})</span>
+            Execution Trace ({attemptsCount})
           </button>
         </div>
 
-        {/* Modal Body */}
-        <div className="p-6 flex-1 overflow-y-auto space-y-4">
+        {/* Body Content */}
+        <div className="p-5 flex-1 overflow-y-auto">
           {loading ? (
-            <div className="py-16 text-center space-y-3">
-              <div className="w-8 h-8 border-2 border-rose-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
-              <p className="text-xs font-mono text-slate-400">Loading scan execution evidence from SQLite database...</p>
+            <div className="py-12 text-center text-xs font-mono text-[#a3a3a3]">
+              Loading scan data...
             </div>
           ) : error ? (
-            <div className="p-4 rounded-xl bg-rose-950/30 border border-rose-800/40 text-rose-300 text-xs">
-              Error fetching scan details: {error}
+            <div className="p-4 rounded border border-[#f97316] text-[#f97316] text-xs font-mono">
+              {error}
             </div>
           ) : (
             <>
-              {/* TAB 1: FINDINGS & BREACHES */}
+              {/* TAB 1: FINDINGS */}
               {activeTab === 'findings' && (
-                <div className="space-y-4">
-                  {(!scan?.findings || scan.findings.length === 0) ? (
-                    <div className="p-8 rounded-xl bg-emerald-950/20 border border-emerald-800/30 text-center space-y-2">
-                      <span className="text-2xl">🛡️</span>
-                      <h4 className="text-sm font-bold text-emerald-400">Zero Security Breaches Detected</h4>
-                      <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
-                        The agent target maintained all operational boundaries. No prompt injection overrides, confidential canary disclosures, or unauthorized tool invocations succeeded.
+                <div className="space-y-3">
+                  {findingsCount === 0 ? (
+                    <div className="p-10 text-center bg-[#000000] border border-[#262626] rounded-lg">
+                      <h4 className="text-sm font-bold text-white font-mono uppercase tracking-wider">
+                        Zero Breaches Detected
+                      </h4>
+                      <p className="text-xs text-[#a3a3a3] mt-1.5">
+                        The agent successfully defended against all prompt injections, data extraction, and tool hijacking attempts.
                       </p>
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      {scan.findings.map((f: Finding) => {
+                      {scan?.findings?.map((f: Finding) => {
                         const isExpanded = expandedFindingId === f.id;
+                        const ev: any = (f as any).evidence || {};
+
                         return (
                           <div
                             key={f.id}
-                            className="rounded-xl border border-[#2b2733] bg-[#13131c] overflow-hidden transition-all"
+                            className={`rounded-lg border transition-all ${
+                              isExpanded ? 'border-[#f97316] bg-[#000000]' : 'border-[#262626] bg-[#0c0c0c] hover:border-[#404040]'
+                            }`}
                           >
                             <div
                               onClick={() => setExpandedFindingId(isExpanded ? null : f.id)}
-                              className="p-4 flex items-center justify-between cursor-pointer hover:bg-[#181824] transition-colors"
+                              className="p-4 flex items-center justify-between cursor-pointer"
                             >
                               <div className="flex items-center space-x-3">
                                 {getSeverityBadge(f.severity)}
                                 <div>
                                   <div className="flex items-center space-x-2">
-                                    <span className="font-mono font-bold text-xs text-white">{f.finding_id}</span>
-                                    <span className="text-[11px] font-mono text-rose-400 px-1.5 py-0.2 rounded bg-rose-950/40 border border-rose-900/40">
+                                    <span className="font-mono font-bold text-xs text-white">
+                                      {f.finding_id || `#${f.id}`}
+                                    </span>
+                                    <span className="text-xs font-semibold text-white">
                                       {f.owasp_category}
                                     </span>
                                   </div>
-                                  <p className="text-xs text-slate-300 mt-1 line-clamp-1">{f.remediation}</p>
+                                  <p className="text-xs text-[#a3a3a3] mt-1">
+                                    {ev.description || f.remediation}
+                                  </p>
                                 </div>
                               </div>
 
-                              <div className="flex items-center space-x-3">
-                                <span className="text-[10px] font-mono text-slate-500">
-                                  Confidence: {Math.round(f.confidence * 100)}%
-                                </span>
-                                <span className="text-slate-400 text-xs font-mono">{isExpanded ? '▲' : '▼'}</span>
-                              </div>
+                              <span className="text-xs font-mono text-[#a3a3a3]">
+                                {isExpanded ? 'Hide' : 'Details &rarr;'}
+                              </span>
                             </div>
 
                             {isExpanded && (
-                              <div className="p-4 bg-[#0d0d13] border-t border-[#23202b] space-y-3 text-xs">
+                              <div className="p-4 bg-black border-t border-[#262626] space-y-3 text-xs">
+                                {ev.observed && (
+                                  <div>
+                                    <span className="text-[10px] font-mono text-[#737373] uppercase tracking-wider block mb-1">
+                                      Observed Violation
+                                    </span>
+                                    <div className="p-3 rounded bg-[#0a0a0a] border border-[#262626] text-white font-mono whitespace-pre-wrap">
+                                      {ev.observed}
+                                    </div>
+                                  </div>
+                                )}
+
                                 <div>
-                                  <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block mb-1">
-                                    Remediation Recommendation
+                                  <span className="text-[10px] font-mono text-[#737373] uppercase tracking-wider block mb-1">
+                                    Required Remediation
                                   </span>
-                                  <div className="p-3 rounded-lg bg-[#14141e] border border-[#262230] text-slate-200 leading-relaxed font-sans">
+                                  <div className="p-3 rounded bg-[#0a0a0a] border border-[#262626] text-white leading-relaxed">
                                     {f.remediation}
                                   </div>
-                                </div>
-
-                                <div>
-                                  <div className="flex items-center justify-between mb-1">
-                                    <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider">
-                                      Cryptographic Evidence Hash (SHA-256)
-                                    </span>
-                                    <button
-                                      onClick={() => copyToClipboard(f.evidence_hash, 'Hash')}
-                                      className="text-[10px] font-mono text-rose-400 hover:underline"
-                                    >
-                                      {copiedText === 'Hash' ? '✓ Copied' : 'Copy Hash'}
-                                    </button>
-                                  </div>
-                                  <div className="p-2.5 rounded-lg bg-[#070709] border border-[#1f1b22] font-mono text-[11px] text-emerald-400 break-all select-all">
-                                    {f.evidence_hash}
-                                  </div>
-                                </div>
-
-                                <div>
-                                  <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block mb-1">
-                                    Full Recorded Evidence Payload
-                                  </span>
-                                  <pre className="p-3 rounded-lg bg-[#070709] border border-[#1f1b22] font-mono text-[11px] text-slate-300 overflow-x-auto max-h-56 leading-relaxed">
-                                    {JSON.stringify((f as any).evidence || f, null, 2)}
-                                  </pre>
                                 </div>
                               </div>
                             )}
@@ -379,144 +315,96 @@ export const ScanInspectorModal: React.FC<ScanInspectorModalProps> = ({ scanId, 
                 </div>
               )}
 
-              {/* TAB 2: ADVERSARIAL ATTEMPTS (PROMPTS & RESPONSES) */}
-              {activeTab === 'attempts' && (
-                <div className="space-y-4">
-                  {(!scan?.attempts || scan.attempts.length === 0) ? (
-                    <div className="p-8 text-center text-slate-500 font-mono text-xs">
-                      No probe attempts recorded for this scan.
+              {/* TAB 2: EXECUTION TRACE */}
+              {activeTab === 'trace' && (
+                <div className="space-y-3 font-mono text-xs">
+                  {attemptsCount === 0 ? (
+                    <div className="p-10 text-center text-[#737373] bg-black border border-[#262626] rounded-lg">
+                      No execution turns recorded for this assessment.
                     </div>
                   ) : (
-                    <div className="space-y-3">
-                      {scan.attempts.map((att: Attempt) => {
-                        const isExpanded = expandedAttemptId === att.id;
-                        return (
-                          <div
-                            key={att.id}
-                            className="rounded-xl border border-[#2b2733] bg-[#13131c] overflow-hidden"
-                          >
-                            <div
-                              onClick={() => setExpandedAttemptId(isExpanded ? null : att.id)}
-                              className="p-4 flex items-center justify-between cursor-pointer hover:bg-[#181824] transition-colors"
-                            >
-                              <div className="flex items-center space-x-3">
-                                <span className="font-mono text-xs px-2 py-0.5 rounded bg-[#1e1c27] text-slate-300 border border-[#2d293a]">
-                                  Turn #{att.turn}
-                                </span>
-                                <div>
-                                  <div className="flex items-center space-x-2">
-                                    <span className="font-bold text-xs text-white">Strategy: {att.strategy}</span>
-                                    {((att.response || '').toLowerCase().includes('internal server error') ||
-                                      (att.response || '').toLowerCase().includes('server error') ||
-                                      (att.response || '').toLowerCase().includes('target communication error') ||
-                                      (att.stance || '').toUpperCase() === 'ERROR') ? (
-                                      <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-800 text-amber-400 border border-amber-800/60">
-                                        TARGET ERROR (NO BREACH)
-                                      </span>
-                                    ) : (
-                                      getStanceBadge(att.stance)
-                                    )}
-                                  </div>
-                                  <p className="text-xs text-slate-400 mt-1 font-mono line-clamp-1">
-                                    &quot;{att.prompt?.slice(0, 90)}...&quot;
-                                  </p>
-                                </div>
-                              </div>
+                    scan?.attempts?.map((att: Attempt) => {
+                      const isExpanded = expandedTurnId === att.id;
+                      const hasViolation = att.stance === 'COMPLIED';
 
-                              <div className="flex items-center space-x-3">
-                                <span className="text-[10px] font-mono text-slate-500">
-                                  Oracle Confidence: {Math.round((att.confidence || 1) * 100)}%
-                                </span>
-                                <span className="text-slate-400 text-xs font-mono">{isExpanded ? '▲' : '▼'}</span>
-                              </div>
+                      return (
+                        <div
+                          key={att.id}
+                          className={`rounded-lg border transition-all ${
+                            hasViolation
+                              ? 'border-[#f97316] bg-[#000000]'
+                              : isExpanded
+                              ? 'border-white bg-[#0e0e0e]'
+                              : 'border-[#262626] bg-[#0a0a0a] hover:border-[#404040]'
+                          }`}
+                        >
+                          <div
+                            onClick={() => setExpandedTurnId(isExpanded ? null : att.id)}
+                            className="p-3.5 flex items-center justify-between cursor-pointer"
+                          >
+                            <div className="flex items-center space-x-3">
+                              <span className="px-2 py-0.5 rounded bg-[#141414] border border-[#262626] text-white font-bold text-[11px]">
+                                Turn #{att.turn}
+                              </span>
+                              <span className="text-xs font-semibold text-white">
+                                {att.strategy}
+                              </span>
+                              {getStanceBadge(att.stance)}
                             </div>
 
-                            {isExpanded && (
-                              <div className="p-4 bg-[#0d0d13] border-t border-[#23202b] space-y-4 text-xs">
-                                {/* Prompt Box */}
-                                <div>
-                                  <div className="flex items-center justify-between mb-1">
-                                    <span className="text-[10px] font-mono text-rose-400 uppercase tracking-wider font-semibold">
-                                      ⚡ Adversarial Probe Prompt Sent
-                                    </span>
-                                    <button
-                                      onClick={() => copyToClipboard(att.prompt, 'Prompt')}
-                                      className="text-[10px] font-mono text-rose-400 hover:underline"
-                                    >
-                                      {copiedText === 'Prompt' ? '✓ Copied' : 'Copy Prompt'}
-                                    </button>
-                                  </div>
-                                  <div className="p-3 rounded-lg bg-[#070709] border border-[#1f1b22] font-mono text-[11px] text-slate-200 whitespace-pre-wrap leading-relaxed">
-                                    {att.prompt}
-                                  </div>
-                                </div>
-
-                                {/* Response Box */}
-                                <div>
-                                  <div className="flex items-center justify-between mb-1">
-                                    <span className="text-[10px] font-mono text-sky-400 uppercase tracking-wider font-semibold">
-                                      🤖 Target Agent Raw LLM Response
-                                    </span>
-                                    <button
-                                      onClick={() => copyToClipboard(att.response, 'Response')}
-                                      className="text-[10px] font-mono text-sky-400 hover:underline"
-                                    >
-                                      {copiedText === 'Response' ? '✓ Copied' : 'Copy Response'}
-                                    </button>
-                                  </div>
-                                  <div className="p-3 rounded-lg bg-[#070709] border border-[#1f1b22] font-mono text-[11px] text-slate-300 whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto">
-                                    {att.response || '<No response or silent error>'}
-                                  </div>
-                                </div>
-
-                                {/* Stance & Reason */}
-                                {att.reason && (
-                                  <div className="p-3 rounded-lg bg-[#14141e] border border-[#262230] text-slate-300 leading-relaxed font-sans">
-                                    <span className="font-semibold text-white">Oracle Verdict Rationale:</span> {att.reason}
-                                  </div>
-                                )}
-
-                                {/* Events if any */}
-                                {att.events && att.events.length > 0 && (
-                                  <div>
-                                    <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block mb-1">
-                                      Internal Kernel / Tool Events ({att.events.length})
-                                    </span>
-                                    <div className="space-y-1">
-                                      {att.events.map((ev, eIdx) => (
-                                        <div key={eIdx} className="p-2 rounded bg-[#070709] border border-[#1f1b22] font-mono text-[10px] flex items-center justify-between">
-                                          <span className="text-amber-400">[{ev.event_type}]</span>
-                                          <span className="text-slate-400 truncate max-w-md">{JSON.stringify(ev.event_data)}</span>
-                                          <span className="text-slate-600">{ev.source}</span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            )}
+                            <div className="flex items-center space-x-3">
+                              <span className="text-[11px] text-[#737373] hidden sm:inline max-w-xs truncate">
+                                &quot;{att.prompt?.slice(0, 50)}...&quot;
+                              </span>
+                              <span className="text-xs text-[#a3a3a3]">
+                                {isExpanded ? 'Hide' : 'Inspect &rarr;'}
+                              </span>
+                            </div>
                           </div>
-                        );
-                      })}
-                    </div>
+
+                          {isExpanded && (
+                            <div className="p-4 bg-black border-t border-[#262626] space-y-3">
+                              {/* Prompt Sent */}
+                              <div>
+                                <span className="text-[10px] text-[#737373] uppercase tracking-wider block mb-1">
+                                  Attacker Prompt Sent
+                                </span>
+                                <div className="p-3 rounded bg-[#0a0a0a] border border-[#262626] text-white whitespace-pre-wrap">
+                                  {att.prompt}
+                                </div>
+                              </div>
+
+                              {/* Model Response */}
+                              <div>
+                                <span className="text-[10px] text-[#737373] uppercase tracking-wider block mb-1">
+                                  Target Model Response Received
+                                </span>
+                                <div className="p-3 rounded bg-[#0a0a0a] border border-[#262626] text-[#a3a3a3] whitespace-pre-wrap max-h-60 overflow-y-auto">
+                                  {att.response || '<No text response>'}
+                                </div>
+                              </div>
+
+                              {/* Tool Invocations if any */}
+                              {att.events && att.events.length > 0 && (
+                                <div>
+                                  <span className="text-[10px] text-[#737373] uppercase tracking-wider block mb-1">
+                                    Observed Tool Invocations ({att.events.length})
+                                  </span>
+                                  <div className="p-3 rounded bg-[#0a0a0a] border border-[#262626] text-[#f97316] whitespace-pre-wrap">
+                                    {JSON.stringify(att.events, null, 2)}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
                   )}
                 </div>
               )}
             </>
           )}
-        </div>
-
-        {/* Modal Footer */}
-        <div className="p-4 bg-[#14141d] border-t border-[#23202b] flex items-center justify-between">
-          <div className="text-xs font-mono text-slate-500">
-            Cryptographic SHA-256 Attestation Active
-          </div>
-          <button
-            onClick={onClose}
-            className="px-4 py-2 rounded-lg text-xs font-semibold bg-[#211e29] hover:bg-[#2b2737] text-white transition-colors"
-          >
-            Close Inspector
-          </button>
         </div>
       </div>
     </div>

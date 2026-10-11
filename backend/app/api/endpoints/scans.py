@@ -393,6 +393,7 @@ async def run_scan_task(
                     "evidence_strength": res.get("evidence_strength", res["confidence"]),
                     "confidence": res["confidence"],  # Deprecated compatibility alias.
                     "evidence_hash": res.get("evidence_hash", ""),
+                    "ground_truth": res.get("ground_truth"),
                 })
 
             # Compute canonical result
@@ -547,6 +548,36 @@ async def list_scans(db: aiosqlite.Connection = Depends(get_db)):
             "policy_coverage": r[16] or 0.0,
         })
     return results
+
+
+@router.delete("/{scan_id}")
+async def delete_scan(scan_id: int, db: aiosqlite.Connection = Depends(get_db)):
+    """Delete a scan record and its associated objectives, attempts, and findings."""
+    async with active_scans_lock:
+        if scan_id in active_scans:
+            active_scans.discard(scan_id)
+    await db.execute("DELETE FROM attack_attempts WHERE objective_id IN (SELECT id FROM attack_objectives WHERE scan_id = ?)", (scan_id,))
+    await db.execute("DELETE FROM findings WHERE scan_id = ?", (scan_id,))
+    await db.execute("DELETE FROM attack_objectives WHERE scan_id = ?", (scan_id,))
+    cur = await db.execute("DELETE FROM scan_runs WHERE id = ?", (scan_id,))
+    await db.commit()
+    if cur.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    return {"status": "DELETED", "scan_id": scan_id}
+
+
+@router.post("/{scan_id}/stop")
+async def stop_scan(scan_id: int, db: aiosqlite.Connection = Depends(get_db)):
+    """Stop/cancel an active scan."""
+    async with active_scans_lock:
+        if scan_id in active_scans:
+            active_scans.discard(scan_id)
+    await db.execute(
+        "UPDATE scan_runs SET status = 'CANCELLED', completed_at = CURRENT_TIMESTAMP WHERE id = ? AND status IN ('RUNNING', 'QUEUED')",
+        (scan_id,)
+    )
+    await db.commit()
+    return {"status": "CANCELLED", "scan_id": scan_id}
 
 
 @router.get("/latest", response_model=Dict[str, Any])
@@ -1103,7 +1134,9 @@ async def execute_sandbox_probe(request: SandboxProbeRequest, db: aiosqlite.Conn
     evidence_strength = eval_res.confidence
 
     # Detect breach conditions dynamically
-    has_canary = any(c in response_text for c in ["CANARY", "INTERNAL_DOC_", "CONFIDENTIAL_COMP_VAULT", "whsec_", "ESCROW-TITAN"])
+    from app.verifier.sensitive import build_sensitive_values
+    sens_obj = build_sensitive_values(session_user_id=request.session_user_id)
+    has_canary = bool(sens_obj.disclosed_canaries(response_text) or sens_obj.structural_secrets(response_text, request.prompt))
     
     # Dynamic cross-tenant BOLA / unauthorized data check
     has_unauthorized_invoice = False
